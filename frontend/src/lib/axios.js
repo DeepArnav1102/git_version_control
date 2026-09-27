@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+
 const apiClient = axios.create({
-  baseURL: 'http://localhost:3000/api/v1',
+  baseURL: API_BASE,
   withCredentials: true, // for HttpOnly cookies
 });
 
@@ -16,7 +18,7 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       try {
         if (!refreshPromise) {
-          refreshPromise = axios.post('http://localhost:3000/api/v1/auth/refresh', {}, { withCredentials: true });
+          refreshPromise = axios.post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true });
         }
         await refreshPromise;
         refreshPromise = null;

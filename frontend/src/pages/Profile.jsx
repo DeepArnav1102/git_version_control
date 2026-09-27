@@ -6,8 +6,9 @@ import ProfileView from '../components/profile/ProfileView';
 import ProfileEdit from '../components/profile/ProfileEdit';
 import ProfileReadme from '../components/profile/ProfileReadme';
 import ProfileTokens from '../components/profile/ProfileTokens';
+import ProfileRepos from '../components/profile/ProfileRepos';
 import FloatingNav from '../components/profile/FloatingNav';
-import { Book, Star, Loader2, Camera, Key, Plus } from 'lucide-react';
+import { BookOpen, Book, Star, Loader2, Camera, Key, Plus } from 'lucide-react';
 import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
 import { Lottie } from 'lottie-react';
@@ -175,26 +176,7 @@ export default function Profile() {
       <div className="flex-1 min-w-0 pr-12">
         {activeTab === 'overview' && <ProfileReadme user={user} />}
 
-        {activeTab === 'repositories' && (
-          <motion.main
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[400px] flex items-center justify-center"
-          >
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mx-auto mb-3">
-                <Book size={18} strokeWidth={1.4} className="text-gray-300" />
-              </div>
-              <p className="text-sm text-gray-400 font-medium mb-1">
-                Repositories
-              </p>
-              <p className="text-xs text-gray-300">
-                You don't have any public repositories yet.
-              </p>
-            </div>
-          </motion.main>
-        )}
+        {activeTab === 'repositories' && <ProfileRepos user={user} />}
 
         {activeTab === 'stars' && (
           <motion.main
