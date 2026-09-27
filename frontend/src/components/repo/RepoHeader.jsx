@@ -14,7 +14,9 @@ export default function RepoHeader({
   copyToClipboard,
   copiedClone,
   isPinned,
-  handlePinToggle
+  handlePinToggle,
+  isStarred,
+  handleToggleStar
 }) {
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
@@ -76,9 +78,14 @@ export default function RepoHeader({
             </button>
           </div>
           <div className="flex rounded-md shadow-sm">
-            <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
-              <Star size={14} className="text-gray-500" />
-              <span>Star</span>
+            <button 
+              onClick={handleToggleStar}
+              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-l-md transition-colors cursor-pointer border-y border-l ${
+                isStarred ? 'bg-gray-100 text-gray-900 border-gray-300 shadow-inner' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Star size={14} className={isStarred ? 'text-gray-900 fill-gray-900' : 'text-gray-500'} />
+              <span>{isStarred ? 'Unstar' : 'Star'}</span>
               <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.starsCount || 0}</span>
             </button>
             <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
@@ -111,7 +118,7 @@ export default function RepoHeader({
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
               >
                 <Terminal size={13} />
-                <span>Connect / Push</span>
+                <span>Connect</span>
               </button>
 
               {showCloneDropdown && (

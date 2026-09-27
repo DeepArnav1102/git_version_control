@@ -406,7 +406,7 @@ export default function CodeTab({
                 <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">1</span>
               </h3>
               <div className="flex items-center gap-2 group">
-                <Link to={`/${repoData.owner?.username}`}>
+                <Link to={`/u/${repoData.owner?.username}`}>
                   <img 
                     src={repoData.owner?.profilePicture || defaultPfp} 
                     alt={repoData.owner?.username}
@@ -414,7 +414,7 @@ export default function CodeTab({
                   />
                 </Link>
                 <div className="flex flex-col">
-                  <Link to={`/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                  <Link to={`/u/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
                     {repoData.owner?.username}
                   </Link>
                   <span className="text-[11px] text-gray-500">{repoData.owner?.name}</span>

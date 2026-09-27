@@ -76,5 +76,58 @@ const protect = asyncHandler(async (req, res, next) => {
         throw new ApiError(401, 'Not authorized, token validation failed');
     }
 });
+const protectOptional = asyncHandler(async (req, res, next) => {
+    let token;
+    
+    if (req.cookies && req.cookies.accessToken) {
+        token = req.cookies.accessToken;
+    }
+    else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        token = req.headers.authorization.split(' ')[1];
+    }
+    else if (req.headers['x-rusty-token']) {
+        token = req.headers['x-rusty-token'];
+    }
+    
+    if (!token) {
+        return next();
+    }
 
-module.exports = { protect };
+    try {
+        if (token.startsWith('git_pat_')) {
+            const crypto = require('crypto');
+            const Token = require('../models/Token.model');
+            
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+            const patDoc = await Token.findOne({ 
+                tokenHash, 
+                type: 'PERSONAL_ACCESS_TOKEN', 
+                isRevoked: false 
+            });
+
+            if (patDoc) {
+                const user = await User.findById(patDoc.userId).select('-passwordHash -securitySalt');
+                if (user) req.user = user;
+            }
+            return next();
+        }
+
+        const decoded = jwt.decode(token);
+        if (decoded && decoded.userId) {
+            const user = await User.findById(decoded.userId);
+            if (user) {
+                try {
+                    verifyAccessToken(token, user.securitySalt);
+                    req.user = user;
+                } catch (err) {
+                    // Ignore token validation failure in optional auth
+                }
+            }
+        }
+        next();
+    } catch (error) {
+        next(); // Ignore errors in optional auth
+    }
+});
+
+module.exports = { protect, protectOptional };

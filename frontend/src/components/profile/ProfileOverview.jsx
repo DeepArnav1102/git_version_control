@@ -219,7 +219,7 @@ export default function ProfileOverview({ user, isOwner }) {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Book size={16} className="text-gray-400" />
-                    <Link to={`/${repo.owner?.username || user.username}/${repo.name}`} className="font-semibold text-blue-600 hover:underline text-sm">
+                    <Link to={`/repo/${repo.owner?.username || user.username}/${repo.name}`} className="font-semibold text-blue-600 hover:underline text-sm">
                       {repo.name}
                     </Link>
                     <span className="px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 text-[10px] font-semibold">

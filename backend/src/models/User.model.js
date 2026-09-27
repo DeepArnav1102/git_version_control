@@ -100,7 +100,10 @@ const userSchema = new mongoose.Schema(
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'Repository',
             }
-        ]
+        ],
+        followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        starredRepos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Repository' }]
     },
     { timestamps: true }
 );

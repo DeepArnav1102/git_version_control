@@ -198,4 +198,31 @@ const deleteRepo = asyncHandler(async (req, res) => {
     });
 });
 
-module.exports = { createRepo, updateRepo, getUserRepos, getReposByUsername, getRepoDetails, requestDeleteOtp, deleteRepo };
+const toggleStarRepo = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    const currentUser = await User.findById(req.user._id);
+    const isStarred = currentUser.starredRepos.includes(repoDoc._id);
+
+    if (isStarred) {
+        currentUser.starredRepos.pull(repoDoc._id);
+        repoDoc.starsCount = Math.max(0, (repoDoc.starsCount || 0) - 1);
+    } else {
+        currentUser.starredRepos.push(repoDoc._id);
+        repoDoc.starsCount = (repoDoc.starsCount || 0) + 1;
+    }
+
+    await currentUser.save();
+    await repoDoc.save();
+
+    res.status(200).json({
+        success: true,
+        message: isStarred ? 'Repository unstarred' : 'Repository starred',
+        data: { isStarred: !isStarred, starsCount: repoDoc.starsCount }
+    });
+});
+
+module.exports = { createRepo, updateRepo, getUserRepos, getReposByUsername, getRepoDetails, requestDeleteOtp, deleteRepo, toggleStarRepo };

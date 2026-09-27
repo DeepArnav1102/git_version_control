@@ -156,6 +156,29 @@ export default function RepoDetail() {
     }
   };
 
+  const isStarred = user?.starredRepos?.some(r => (r._id || r) === repoData?._id);
+
+  const handleToggleStar = async () => {
+    if (!user) return;
+    try {
+      const res = await apiClient.post(`/repos/${owner}/${repo}/star`);
+      
+      // Update local repo data
+      setRepoData(prev => ({ ...prev, starsCount: res.data.data.starsCount }));
+      
+      // Update user starredRepos list locally
+      if (res.data.data.isStarred) {
+        setUser({ ...user, starredRepos: [...(user.starredRepos || []), repoData] });
+      } else {
+        setUser({ ...user, starredRepos: (user.starredRepos || []).filter(r => (r._id || r) !== repoData._id) });
+      }
+      
+      jsonToast.success(res.data.message);
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || 'Failed to toggle star');
+    }
+  };
+
   const handleRequestDeleteOtp = async () => {
     if (!window.confirm(`Are you absolutely sure you want to delete ${owner}/${repo}? This action cannot be undone.`)) {
       return;
@@ -456,6 +479,8 @@ export default function RepoDetail() {
         copiedClone={copiedClone}
         isPinned={isPinned}
         handlePinToggle={handlePinToggle}
+        isStarred={isStarred}
+        handleToggleStar={handleToggleStar}
       />
 
       {/* Horizontal Tabs */}

@@ -14,6 +14,7 @@ const {
     updateRef,
     requestDeleteOtp,
     deleteRepo,
+    toggleStarRepo,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -27,6 +28,7 @@ router.get('/user/:username', getReposByUsername);
 // ─── Single Repo Routes ───────────────────────────────────────────────
 router.get('/:owner/:repo', getRepoDetails);
 router.patch('/:owner/:repo', protect, updateRepo);
+router.post('/:owner/:repo/star', protect, toggleStarRepo);
 router.post('/:owner/:repo/request-delete-otp', otpLimiter, protect, requestDeleteOtp);
 router.delete('/:owner/:repo', protect, deleteRepo);
 router.get('/:owner/:repo/tree', getRepoTree);

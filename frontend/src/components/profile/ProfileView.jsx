@@ -4,7 +4,7 @@ import { MapPin, Building2, Clock, Mail, Users, UserPlus, Pencil } from 'lucide-
 import { socialIcons } from './ProfileIcons';
 import { InfoRow } from './ProfileShared';
 
-export default function ProfileView({ user, onEdit }) {
+export default function ProfileView({ user, onEdit, isFollowing, onToggleFollow, currentUser }) {
   const locationStr = user?.location
     ? [user.location.city, user.location.state, user.location.country].filter(Boolean).join(', ')
     : null;
@@ -41,7 +41,7 @@ export default function ProfileView({ user, onEdit }) {
         <p className="text-[13.5px] text-gray-600 leading-relaxed mb-4">{user.bio}</p>
       )}
 
-      {onEdit && (
+      {onEdit ? (
         <button
           onClick={onEdit}
           className="w-full py-1.5 px-4 text-[13px] font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all duration-200 mb-5 flex items-center justify-center gap-2 cursor-pointer"
@@ -49,11 +49,18 @@ export default function ProfileView({ user, onEdit }) {
           <Pencil size={13} strokeWidth={1.8} />
           Edit profile
         </button>
+      ) : currentUser && (
+        <button
+          onClick={onToggleFollow}
+          className="w-full py-1.5 px-4 text-[13px] font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all duration-200 mb-5 flex items-center justify-center gap-2 cursor-pointer"
+        >
+          {isFollowing ? 'Unfollow' : 'Follow'}
+        </button>
       )}
 
       <div className="flex items-center gap-3 mb-5 text-[13px] text-gray-600">
-        <button className="flex items-center gap-1.5 hover:text-gray-900 transition-colors cursor-pointer group">
-          <Users size={15} strokeWidth={1.6} className="text-gray-400 group-hover:text-gray-600 transition-colors" />
+        <button className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer group">
+          <Users size={15} strokeWidth={1.6} className="text-gray-400 group-hover:text-blue-500 transition-colors" />
           <strong className="text-gray-900 font-semibold">{user?.followers?.length ?? 0}</strong>
           <span>followers</span>
         </button>
