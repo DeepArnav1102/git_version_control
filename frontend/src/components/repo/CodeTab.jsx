@@ -1,7 +1,8 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Folder, PanelLeftClose, Search, PanelLeft, 
-  ChevronRight, Check, Copy 
+  ChevronRight, Check, Copy, Star, Eye, GitFork
 } from 'lucide-react';
 import { getFileIcon } from '../../utils/fileIcons';
 import EmptyRepoView from './EmptyRepoView';
@@ -9,6 +10,83 @@ import SidebarNode from './SidebarNode';
 import ReadmeBox from './ReadmeBox';
 
 const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
+
+
+const getLanguageColorHex = (language) => {
+  const colors = {
+    JavaScript: '#f1e05a',
+    TypeScript: '#3178c6',
+    Python: '#3572A5',
+    Java: '#b07219',
+    'C++': '#f34b7d',
+    'C#': '#178600',
+    Ruby: '#701516',
+    Go: '#00ADD8',
+    Rust: '#dea584',
+    'Jupyter Notebook': '#DA5B0B',
+    HTML: '#e34c26',
+    CSS: '#563d7c'
+  };
+  return colors[language] || '#ccc';
+};
+
+
+const extensionToLanguage = {
+  '.js': 'JavaScript',
+  '.jsx': 'JavaScript',
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript',
+  '.py': 'Python',
+  '.java': 'Java',
+  '.cpp': 'C++',
+  '.hpp': 'C++',
+  '.c': 'C',
+  '.h': 'C',
+  '.cs': 'C#',
+  '.rb': 'Ruby',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.php': 'PHP',
+  '.swift': 'Swift',
+  '.kt': 'Kotlin',
+  '.html': 'HTML',
+  '.css': 'CSS',
+  '.md': 'Markdown',
+  '.json': 'JSON',
+  '.ipynb': 'Jupyter Notebook'
+};
+
+const calculateLanguages = (tree) => {
+  if (!tree) return [];
+  const counts = {};
+  let total = 0;
+
+  const traverse = (nodes) => {
+    for (const node of nodes) {
+      if (node.object_type === 'blob') {
+        const ext = node.name.includes('.') ? node.name.substring(node.name.lastIndexOf('.')).toLowerCase() : '';
+        const lang = extensionToLanguage[ext];
+        if (lang && lang !== 'Markdown' && lang !== 'JSON') { // Optional: ignore some generic formats like github does
+          counts[lang] = (counts[lang] || 0) + 1;
+          total += 1;
+        }
+      } else if (node.object_type === 'tree' && node.children) {
+        traverse(node.children);
+      }
+    }
+  };
+
+  traverse(tree);
+
+  if (total === 0) return [];
+  
+  return Object.entries(counts)
+    .map(([name, count]) => ({
+      name,
+      percentage: ((count / total) * 100).toFixed(1)
+    }))
+    .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage));
+};
 
 export default function CodeTab({
   isEmpty,
@@ -292,7 +370,89 @@ export default function CodeTab({
               />
             )}
         </div>
+
+        {/* Right Sidebar */}
+        {!currentPath && !activeFile && (
+          <div className="hidden lg:flex w-[296px] flex-shrink-0 flex-col gap-6 pl-4 border-l border-gray-200">
+            {/* About */}
+            <div>
+              <h3 className="font-semibold text-gray-900 mb-3">About</h3>
+              <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                {repoData.description || <span className="italic text-gray-400">No description, website, or topics provided.</span>}
+              </p>
+              
+              <div className="space-y-3 text-sm text-gray-600">
+                <div className="flex items-center gap-2 hover:text-blue-600 cursor-pointer transition-colors">
+                  <Star size={16} className="text-gray-400" />
+                  <span className="font-medium">{repoData.starsCount || 0}</span> stars
+                </div>
+                <div className="flex items-center gap-2 hover:text-blue-600 cursor-pointer transition-colors">
+                  <Eye size={16} className="text-gray-400" />
+                  <span className="font-medium">{repoData.watchersCount || 0}</span> watching
+                </div>
+                <div className="flex items-center gap-2 hover:text-blue-600 cursor-pointer transition-colors">
+                  <GitFork size={16} className="text-gray-400" />
+                  <span className="font-medium">{repoData.forksCount || 0}</span> forks
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-gray-200" />
+
+            {/* Contributors */}
+            <div>
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center justify-between">
+                Contributors
+                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">1</span>
+              </h3>
+              <div className="flex items-center gap-2 group">
+                <Link to={`/${repoData.owner?.username}`}>
+                  <img 
+                    src={repoData.owner?.profilePicture || defaultPfp} 
+                    alt={repoData.owner?.username}
+                    className="w-8 h-8 rounded-full border border-gray-200 shadow-sm group-hover:ring-2 ring-blue-500/20 transition-all" 
+                  />
+                </Link>
+                <div className="flex flex-col">
+                  <Link to={`/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                    {repoData.owner?.username}
+                  </Link>
+                  <span className="text-[11px] text-gray-500">{repoData.owner?.name}</span>
+                </div>
+              </div>
+            </div>
+
+            {(() => {
+              const langs = calculateLanguages(rootTree);
+              if (langs.length === 0) return null;
+              
+              return (
+                <>
+                  <div className="h-px bg-gray-200" />
+                  {/* Languages */}
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3">Languages</h3>
+                    <div className="h-2 w-full rounded-full overflow-hidden flex mb-2">
+                      {langs.map(l => (
+                        <div key={l.name} style={{ width: `${l.percentage}%`, backgroundColor: getLanguageColorHex(l.name) }} title={`${l.name} ${l.percentage}%`} />
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
+                      {langs.map(l => (
+                        <div key={l.name} className="flex items-center gap-1.5 text-xs font-semibold text-gray-700">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getLanguageColorHex(l.name) }} />
+                          {l.name} <span className="text-gray-400 font-normal">{l.percentage}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
     </div>
+
   );
 }
