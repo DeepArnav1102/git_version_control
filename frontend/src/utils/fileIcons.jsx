@@ -25,56 +25,56 @@ export function getFileIcon(fileName) {
   switch (ext) {
     case 'md':
     case 'markdown':
-      return <FileText {...iconProps} className={`${iconProps.className} text-blue-500`} />;
+      return <FileText {...iconProps} color="#083fa1" />;
     case 'js':
-      return <SiJavascript {...iconProps} className={`${iconProps.className} text-yellow-500`} />;
+      return <SiJavascript {...iconProps} color="#F7DF1E" />;
     case 'jsx':
-      return <SiReact {...iconProps} className={`${iconProps.className} text-cyan-500`} />;
+      return <SiReact {...iconProps} color="#61DAFB" />;
     case 'ts':
-      return <SiTypescript {...iconProps} className={`${iconProps.className} text-blue-500`} />;
+      return <SiTypescript {...iconProps} color="#3178C6" />;
     case 'tsx':
-      return <SiReact {...iconProps} className={`${iconProps.className} text-cyan-500`} />;
+      return <SiReact {...iconProps} color="#3178C6" />;
     case 'py':
-      return <SiPython {...iconProps} className={`${iconProps.className} text-blue-400`} />;
+      return <SiPython {...iconProps} color="#3776AB" />;
     case 'c':
-      return <SiC {...iconProps} className={`${iconProps.className} text-blue-600`} />;
+      return <SiC {...iconProps} color="#A8B9CC" />;
     case 'cpp':
     case 'cxx':
     case 'cc':
     case 'h':
     case 'hpp':
-      return <SiCplusplus {...iconProps} className={`${iconProps.className} text-blue-600`} />;
+      return <SiCplusplus {...iconProps} color="#00599C" />;
     case 'java':
-      return <FaJava {...iconProps} className={`${iconProps.className} text-red-500`} />;
+      return <FaJava {...iconProps} color="#007396" />;
     case 'html':
-      return <SiHtml5 {...iconProps} className={`${iconProps.className} text-orange-500`} />;
+      return <SiHtml5 {...iconProps} color="#E34F26" />;
     case 'css':
     case 'scss':
-      return <SiCss {...iconProps} className={`${iconProps.className} text-blue-500`} />;
+      return <SiCss {...iconProps} color="#1572B6" />;
     case 'rs':
-      return <SiRust {...iconProps} className={`${iconProps.className} text-orange-600`} />;
+      return <SiRust {...iconProps} color="#000000" />;
     case 'go':
-      return <SiGo {...iconProps} className={`${iconProps.className} text-cyan-500`} />;
+      return <SiGo {...iconProps} color="#00ADD8" />;
     case 'php':
-      return <SiPhp {...iconProps} className={`${iconProps.className} text-indigo-400`} />;
+      return <SiPhp {...iconProps} color="#777BB4" />;
     case 'rb':
-      return <SiRuby {...iconProps} className={`${iconProps.className} text-red-500`} />;
+      return <SiRuby {...iconProps} color="#CC342D" />;
     case 'swift':
-      return <SiSwift {...iconProps} className={`${iconProps.className} text-orange-500`} />;
+      return <SiSwift {...iconProps} color="#F05138" />;
     case 'json':
-      return <FileCode {...iconProps} className={`${iconProps.className} text-amber-500/80`} />;
+      return <FileCode {...iconProps} color="#CBCB41" />;
     case 'txt':
     case 'rst':
-      return <FileText size={14} className="text-gray-400 flex-shrink-0" />;
+      return <FileText size={14} color="#8c929d" className="flex-shrink-0" />;
     case 'yml':
     case 'yaml':
     case 'toml':
     case 'xml':
-      return <FileCode size={14} className="text-amber-500/80 flex-shrink-0" />;
+      return <FileCode size={14} color="#CB3837" className="flex-shrink-0" />;
     case 'sh':
     case 'bash':
-      return <FileCode size={14} className="text-green-500/80 flex-shrink-0" />;
+      return <FileCode size={14} color="#4EAA25" className="flex-shrink-0" />;
     default:
-      return <FileText size={14} className="text-gray-400 flex-shrink-0" />;
+      return <FileText size={14} color="#8c929d" className="flex-shrink-0" />;
   }
 }

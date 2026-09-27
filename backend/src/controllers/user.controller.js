@@ -5,6 +5,13 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 
 const getMe = asyncHandler(async (req, res) => {
+    if (!req.user) {
+        return res.status(200).json({
+            success: true,
+            data: { user: null }
+        });
+    }
+
     const user = await User.findById(req.user._id)
         .populate({
             path: 'pinnedRepos',

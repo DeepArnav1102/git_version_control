@@ -39,7 +39,7 @@ const router = express.Router();
  *       401:
  *         description: Not authorized
  */
-router.get('/me', protect, getMe);
+router.get('/me', protectOptional, getMe);
 
 /**
  * @swagger

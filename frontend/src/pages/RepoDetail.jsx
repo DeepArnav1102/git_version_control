@@ -104,6 +104,15 @@ export default function RepoDetail() {
     }
   }, [repoData]);
 
+  // Auto-hide sidebar when navigating away from root
+  useEffect(() => {
+    if (activeFile || currentPath) {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
+    }
+  }, [activeFile, currentPath]);
+
   const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
     if (newTab !== 'code') {
@@ -462,7 +471,7 @@ export default function RepoDetail() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -15 }}
       transition={{ duration: 0.3 }}
-      className="max-w-[1400px] mx-auto px-6 md:px-10 py-8 font-sans"
+      className="max-w-[1600px] mx-auto px-4 md:px-6 py-8 font-sans"
     >
       {/* ── Top Header ────────────────────────────────────────── */}
       <RepoHeader
@@ -550,6 +559,7 @@ export default function RepoDetail() {
             copiedFile={copiedFile}
             handleCloseFile={handleCloseFile}
             handleEntryClick={handleEntryClick}
+            loadingFile={loadingFile}
           />
         </motion.div>
       )}

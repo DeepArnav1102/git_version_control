@@ -8,6 +8,8 @@ import { getFileIcon } from '../../utils/fileIcons';
 import EmptyRepoView from './EmptyRepoView';
 import SidebarNode from './SidebarNode';
 import ReadmeBox from './ReadmeBox';
+import Editor from '@monaco-editor/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 
@@ -113,7 +115,8 @@ export default function CodeTab({
   activeFile,
   copiedFile,
   handleCloseFile,
-  handleEntryClick
+  handleEntryClick,
+  loadingFile
 }) {
   if (isEmpty) {
     return <EmptyRepoView repoData={repoData} remoteUrl={remoteUrl} copyToClipboard={copyToClipboard} />;
@@ -147,95 +150,117 @@ export default function CodeTab({
       )}
 
       {/* ── Sidebar + Main Panel ──────────────────────────── */}
-      <div className="flex gap-4 items-start">
+      <div className="flex items-start">
         {/* Sidebar Tree */}
-        {sidebarOpen && (
-          <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50/80 border-b border-gray-200">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 truncate">
-                <Folder size={14} className="text-[#54aeff] flex-shrink-0" />
-                <span className="truncate">Files</span>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 transition-colors cursor-pointer"
-                title="Collapse file tree"
-              >
-                <PanelLeftClose size={14} />
-              </button>
-            </div>
-
-            {/* Filter / Search Bar */}
-            <div className="p-2 border-b border-gray-100 bg-white">
-              <div className="relative flex items-center">
-                <Search size={12} className="absolute left-2 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={treeFilter}
-                  onChange={(e) => setTreeFilter(e.target.value)}
-                  placeholder="Filter files..."
-                  className="w-full pl-6 pr-6 py-1 bg-gray-50 border border-gray-200 rounded-md text-[11px] text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all"
-                />
-                {treeFilter && (
+        <AnimatePresence initial={false}>
+          {sidebarOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0, marginRight: 0 }}
+              animate={{ width: 256, opacity: 1, marginRight: 16 }}
+              exit={{ width: 0, opacity: 0, marginRight: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="flex-shrink-0 overflow-hidden"
+            >
+              <div className="w-64 bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50/80 border-b border-gray-200">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 truncate">
+                    <Folder size={14} className="text-[#54aeff] flex-shrink-0" />
+                    <span className="truncate">Files</span>
+                  </div>
                   <button
-                    onClick={() => setTreeFilter('')}
-                    className="absolute right-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    onClick={() => setSidebarOpen(false)}
+                    className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 transition-colors cursor-pointer"
+                    title="Collapse file tree"
                   >
-                    ✕
+                    <PanelLeftClose size={14} />
                   </button>
-                )}
-              </div>
-            </div>
-
-            {/* Tree View */}
-            <div className="p-1.5 max-h-[600px] overflow-y-auto space-y-0.5">
-              {rootTree && rootTree.length > 0 ? (
-                [...rootTree]
-                  .sort((a, b) => {
-                    if (a.object_type === b.object_type) return a.name.localeCompare(b.name);
-                    return a.object_type === 'tree' ? -1 : 1;
-                  })
-                  .map((entry) => (
-                    <SidebarNode
-                      key={entry.path || entry.name}
-                      entry={entry}
-                      owner={owner}
-                      repo={repo}
-                      branch={currentBranch}
-                      basePath=""
-                      depth={0}
-                      expandedPaths={expandedPaths}
-                      toggleFolder={toggleFolder}
-                      onFileClick={handleSidebarFileClick}
-                      onFolderClick={handleSidebarFolderClick}
-                      activeFilePath={activeFilePath}
-                      currentPath={currentPath}
-                      filterQuery={treeFilter}
-                    />
-                  ))
-              ) : (
-                <div className="py-6 text-center text-xs text-gray-400">
-                  No files in this branch
                 </div>
-              )}
-            </div>
-          </div>
-        )}
+
+                {/* Filter / Search Bar */}
+                <div className="p-2 border-b border-gray-100 bg-white">
+                  <div className="relative flex items-center">
+                    <Search size={12} className="absolute left-2 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={treeFilter}
+                      onChange={(e) => setTreeFilter(e.target.value)}
+                      placeholder="Filter files..."
+                      className="w-full pl-6 pr-6 py-1 bg-gray-50 border border-gray-200 rounded-md text-[11px] text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all"
+                    />
+                    {treeFilter && (
+                      <button
+                        onClick={() => setTreeFilter('')}
+                        className="absolute right-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tree View */}
+                <div className="p-1.5 max-h-[600px] overflow-y-auto space-y-0.5">
+                  {rootTree && rootTree.length > 0 ? (
+                    [...rootTree]
+                      .sort((a, b) => {
+                        if (a.object_type === b.object_type) return a.name.localeCompare(b.name);
+                        return a.object_type === 'tree' ? -1 : 1;
+                      })
+                      .map((entry) => (
+                        <SidebarNode
+                          key={entry.path || entry.name}
+                          entry={entry}
+                          owner={owner}
+                          repo={repo}
+                          branch={currentBranch}
+                          basePath=""
+                          depth={0}
+                          expandedPaths={expandedPaths}
+                          toggleFolder={toggleFolder}
+                          onFileClick={handleSidebarFileClick}
+                          onFolderClick={handleSidebarFolderClick}
+                          activeFilePath={activeFilePath}
+                          currentPath={currentPath}
+                          filterQuery={treeFilter}
+                        />
+                      ))
+                  ) : (
+                    <div className="py-6 text-center text-xs text-gray-400">
+                      No files in this branch
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Collapsed sidebar toggle */}
         {!sidebarOpen && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-xs"
-            title="Expand file tree"
-          >
-            <PanelLeft size={14} />
-          </button>
+          <div className="mr-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-xs"
+              title="Expand file tree"
+            >
+              <PanelLeft size={14} />
+            </button>
+          </div>
         )}
 
         {/* Main Content */}
-        <div className="flex-1 min-w-0 space-y-4">
+        <div className="flex-1 min-w-0 space-y-4 relative">
+          {loadingFile && (
+            <div className="absolute -top-3 left-0 right-0 h-[2px] bg-blue-100 overflow-hidden rounded-full z-10">
+              <motion.div
+                className="h-full bg-blue-500"
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </div>
+          )}
           {/* Breadcrumbs Navigation */}
           <div className="flex items-center gap-1.5 text-xs text-gray-600 px-1">
             <button
@@ -296,18 +321,25 @@ export default function CodeTab({
                 </div>
               </div>
 
-              {/* Code viewer with line numbers */}
-              <div className="p-4 overflow-x-auto font-mono text-[12px] leading-relaxed bg-[#f8f9fa] text-gray-900">
-                <pre className="table w-full">
-                  {activeFile.content.split('\n').map((line, i) => (
-                    <div key={i} className="table-row hover:bg-gray-100/70">
-                      <span className="table-cell pr-4 text-right select-none text-gray-400 text-[11px] w-10">
-                        {i + 1}
-                      </span>
-                      <span className="table-cell whitespace-pre">{line || ' '}</span>
-                    </div>
-                  ))}
-                </pre>
+              {/* Code viewer with syntax highlighting */}
+              <div className="h-[65vh] min-h-[400px] w-full border-t border-gray-200 bg-[#fffffe]">
+                <Editor
+                  height="100%"
+                  path={activeFile.name}
+                  value={activeFile.content}
+                  theme="vs-light"
+                  options={{
+                    readOnly: true,
+                    domReadOnly: true,
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    lineNumbersMinChars: 4,
+                    padding: { top: 16, bottom: 16 },
+                    scrollbar: { alwaysConsumeMouseWheel: false },
+                  }}
+                />
               </div>
             </div>
           ) : (
