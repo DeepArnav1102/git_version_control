@@ -36,8 +36,10 @@ const generateAndSendOtp = async (user, purpose) => {
         expiresAt,
     });
 
-    // Always log in development for easy testing
-    logger.info(`🔑 [OTP] Generated OTP for ${user.email}: ${rawOtp} (Purpose: ${purpose})`);
+    // Always log in development for easy testing — NEVER in production
+    if (process.env.NODE_ENV !== 'production') {
+        logger.info(`🔑 [OTP DEV] Generated OTP for ${user.email}: ${rawOtp} (Purpose: ${purpose})`);
+    }
 
     // 5. Trigger email based on purpose (catch email errors so local development is not blocked)
     try {
@@ -47,6 +49,8 @@ const generateAndSendOtp = async (user, purpose) => {
             await emailService.sendPasswordResetEmail(user.email, rawOtp);
         } else if (purpose === 'PAT_ACTION') {
             await emailService.sendPatSecurityCodeEmail(user.email, rawOtp);
+        } else if (purpose === 'REPO_DELETE') {
+            await emailService.sendRepoDeleteEmail(user.email, rawOtp);
         } else {
             logger.warn(`Unknown OTP purpose: ${purpose}`);
         }

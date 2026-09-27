@@ -23,6 +23,18 @@ const repositorySchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        starsCount: {
+            type: Number,
+            default: 0,
+        },
+        forksCount: {
+            type: Number,
+            default: 0,
+        },
+        watchersCount: {
+            type: Number,
+            default: 0,
+        },
         defaultBranch: {
             type: String,
             default: 'main',

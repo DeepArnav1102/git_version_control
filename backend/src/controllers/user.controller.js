@@ -1,10 +1,17 @@
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
+const Repository = require('../models/Repository.model');
+const GitObject = require('../models/GitObject.model');
 
 const getMe = asyncHandler(async (req, res) => {
-    // req.user is populated by protect middleware
-    const user = await User.findById(req.user._id).select('-passwordHash -securitySalt');
+    const user = await User.findById(req.user._id)
+        .populate({
+            path: 'pinnedRepos',
+            select: 'name description language isPrivate _id owner defaultBranch',
+            populate: { path: 'owner', select: 'username' }
+        })
+        .select('-passwordHash -securitySalt');
     if (!user) {
         throw new ApiError(404, 'User not found');
     }
@@ -107,7 +114,12 @@ const updateProfile = asyncHandler(async (req, res) => {
     if (username !== undefined) updateData.username = username.toLowerCase();
     if (bio !== undefined) updateData.bio = bio;
     if (gender !== undefined) updateData.gender = gender;
-    if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
+    if (profilePicture !== undefined) {
+        if (profilePicture && !profilePicture.startsWith('https://')) {
+            throw new ApiError(400, 'profilePicture must be a valid HTTPS URL');
+        }
+        updateData.profilePicture = profilePicture;
+    }
     if (organization !== undefined) updateData.organization = organization;
     if (location !== undefined) updateData.location = location;
     if (localTime !== undefined) updateData.localTime = localTime;
@@ -235,6 +247,11 @@ const getPublicProfile = asyncHandler(async (req, res) => {
     
     // Find user by username
     const user = await User.findOne({ username: username.toLowerCase() })
+        .populate({
+            path: 'pinnedRepos',
+            select: 'name description language isPrivate _id owner defaultBranch',
+            populate: { path: 'owner', select: 'username' }
+        })
         .select('-passwordHash -securitySalt');
         
     if (!user) {
@@ -247,6 +264,87 @@ const getPublicProfile = asyncHandler(async (req, res) => {
     });
 });
 
+const updatePinnedRepos = asyncHandler(async (req, res) => {
+    const { pinnedRepos } = req.body;
+    
+    if (!Array.isArray(pinnedRepos)) {
+        throw new ApiError(400, 'pinnedRepos must be an array of repository IDs');
+    }
+    
+    // Ensure the user owns these repos before pinning them
+    const repos = await Repository.find({ _id: { $in: pinnedRepos }, owner: req.user._id });
+    if (repos.length !== pinnedRepos.length) {
+        throw new ApiError(400, 'One or more repositories are invalid or not owned by you');
+    }
+    
+    const user = await User.findByIdAndUpdate(
+        req.user._id,
+        { $set: { pinnedRepos } },
+        { new: true }
+    ).populate({
+        path: 'pinnedRepos',
+        select: 'name description language isPrivate _id owner',
+        populate: { path: 'owner', select: 'username' }
+    });
+    
+    res.status(200).json({
+        success: true,
+        message: 'Pinned repositories updated successfully',
+        data: { pinnedRepos: user.pinnedRepos }
+    });
+});
+
+const getUserContributions = asyncHandler(async (req, res) => {
+    const { username } = req.params;
+    
+    const user = await User.findOne({ username: username.toLowerCase() });
+    if (!user) throw new ApiError(404, 'User not found');
+    
+    // Calculate date range for the last 365 days
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 365);
+    
+    // Count commits by this user pushed within the last year
+    const commits = await GitObject.aggregate([
+        {
+            $match: {
+                pushedBy: user._id,
+                type: 'commit',
+                createdAt: { $gte: startDate, $lte: endDate }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+                },
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { _id: 1 } }
+    ]);
+    
+    // Convert to dictionary: { 'YYYY-MM-DD': count }
+    const heatmap = {};
+    let totalContributions = 0;
+    
+    commits.forEach(c => {
+        heatmap[c._id] = c.count;
+        totalContributions += c.count;
+    });
+    
+    res.status(200).json({
+        success: true,
+        data: {
+            heatmap,
+            totalContributions,
+            startDate,
+            endDate
+        }
+    });
+});
+
 module.exports = {
     getMe,
     checkUsername,
@@ -256,4 +354,6 @@ module.exports = {
     updateDashboardCard,
     searchUsers,
     getPublicProfile,
+    updatePinnedRepos,
+    getUserContributions,
 };

@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useAuthStore from '../store/useAuthStore';
 import axios from '../lib/axios';
 
+const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
+
 // Extracted sub-components
 import IconBox from './navbar/IconBox';
 import LottieIcon from './navbar/LottieIcon';
@@ -140,9 +142,10 @@ export default function Navbar() {
                         className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
                       >
                         <img
-                          src={u.profilePicture || `https://api.dicebear.com/7.x/notionists/svg?seed=${u.username}`}
+                          src={u.profilePicture || defaultPfp}
                           alt={u.name}
                           className="w-7 h-7 rounded-full object-cover border border-gray-200"
+                          onError={(e) => { e.target.src = defaultPfp; }}
                         />
                         <div className="flex flex-col">
                           <span className="text-[12px] font-bold text-gray-900 leading-tight">{u.name}</span>
@@ -172,9 +175,9 @@ export default function Navbar() {
             <GitPullRequest size={15} strokeWidth={1.8} />
           </IconBox>
 
-          <IconBox onClick={() => navigate('/profile?tab=repositories')} title="Repositories">
-            <LottieIcon src={folderAnim} trigger="hover" />
-          </IconBox>
+          <div title="Repositories">
+            <LottieIcon src={folderAnim} trigger="hover" onClick={() => navigate('/profile?tab=repositories')} />
+          </div>
           <LottieIcon src={notificationAnim} trigger="hover" />
 
           {/* Profile avatar & dropdown */}

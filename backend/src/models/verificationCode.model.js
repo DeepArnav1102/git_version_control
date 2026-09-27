@@ -17,7 +17,7 @@ const verificationCodeSchema = new mongoose.Schema(
         },
         purpose: {
             type: String,
-            enum: ['REGISTRATION_VERIFY', 'PASSWORD_RESET', 'PAT_ACTION'],
+            enum: ['REGISTRATION_VERIFY', 'PASSWORD_RESET', 'PAT_ACTION', 'REPO_DELETE'],
             required: true,
         },
         attempts: {

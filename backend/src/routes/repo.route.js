@@ -2,6 +2,7 @@ const express = require('express');
 const { protect } = require('../middlewares/auth.middleware');
 const {
     createRepo,
+    updateRepo,
     getUserRepos,
     getReposByUsername,
     getRepoDetails,
@@ -11,7 +12,10 @@ const {
     checkObjectExists,
     storeObject,
     updateRef,
+    requestDeleteOtp,
+    deleteRepo,
 } = require('../controllers/repo.controller');
+const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
 const router = express.Router();
 
@@ -22,6 +26,9 @@ router.get('/user/:username', getReposByUsername);
 
 // ─── Single Repo Routes ───────────────────────────────────────────────
 router.get('/:owner/:repo', getRepoDetails);
+router.patch('/:owner/:repo', protect, updateRepo);
+router.post('/:owner/:repo/request-delete-otp', otpLimiter, protect, requestDeleteOtp);
+router.delete('/:owner/:repo', protect, deleteRepo);
 router.get('/:owner/:repo/tree', getRepoTree);
 router.get('/:owner/:repo/tree/:ref', getRepoTree);
 router.get('/:owner/:repo/blob/:hash', getRepoBlob);

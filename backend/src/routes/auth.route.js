@@ -21,6 +21,19 @@ const {
     resetPasswordSchema
 } = require('../validations/auth.validation');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
+const rateLimit = require('express-rate-limit');
+const ApiError = require('../utils/ApiError');
+
+// Strict limiter: 10 attempts per 15 minutes per IP — for login, register, refresh
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, next) => {
+        next(new ApiError(429, 'Too many attempts from this IP. Please try again in 15 minutes.'));
+    }
+});
 
 const router = express.Router();
 
@@ -48,7 +61,7 @@ const router = express.Router();
  *       201:
  *         description: User created, OTP sent
  */
-router.post('/register', validate(registerSchema), register);
+router.post('/register', authLimiter, validate(registerSchema), register);
 
 /**
  * @swagger
@@ -123,7 +136,7 @@ router.post('/resend-verification', otpLimiter, validate(forgotPasswordSchema), 
  *       200:
  *         description: Login successful
  */
-router.post('/login', validate(loginSchema), login);
+router.post('/login', authLimiter, validate(loginSchema), login);
 
 /**
  * @swagger
@@ -211,7 +224,7 @@ router.post('/google/callback', googleCallback);
  *       200:
  *         description: Returns a new accessToken
  */
-router.post('/refresh', refresh);
+router.post('/refresh', authLimiter, refresh);
 
 /**
  * @swagger

@@ -84,8 +84,33 @@ const sendPatSecurityCodeEmail = async (toEmail, otpCode) => {
     }
 };
 
+const sendRepoDeleteEmail = async (toEmail, otpCode) => {
+    try {
+        await transporter.sendMail({
+            from: FROM_EMAIL,
+            to: toEmail,
+            subject: 'Security Alert: Repository Deletion Requested',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #333;">Action Required</h2>
+                    <p style="color: #555;">You requested to permanently delete a repository. Please use the following 6-digit security code to proceed. This action cannot be undone.</p>
+                    <div style="background-color: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; border-radius: 4px; margin: 20px 0;">
+                        ${otpCode}
+                    </div>
+                    <p style="color: #d9534f; font-weight: bold;">If you did not initiate this action, please secure your account immediately.</p>
+                </div>
+            `,
+        });
+        logger.info(`Repo deletion security code email sent to ${toEmail}`);
+    } catch (error) {
+        logger.error(`Failed to send Repo deletion email to ${toEmail}: ${error.message}`);
+        throw error;
+    }
+};
+
 module.exports = {
     sendVerificationEmail,
     sendPasswordResetEmail,
     sendPatSecurityCodeEmail,
+    sendRepoDeleteEmail,
 };

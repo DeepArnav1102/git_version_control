@@ -10,6 +10,8 @@ const {
     updateDashboardCard,
     searchUsers,
     getPublicProfile,
+    updatePinnedRepos,
+    getUserContributions,
 } = require('../controllers/user.controller');
 
 const {
@@ -246,5 +248,51 @@ router.patch('/dashboard-card', protect, validate(updateDashboardCardSchema), up
  *         description: User not found
  */
 router.get('/u/:username', protect, getPublicProfile);
+
+/**
+ * @swagger
+ * /api/v1/users/pinned:
+ *   put:
+ *     summary: Update pinned repositories for current user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - pinnedRepos
+ *             properties:
+ *               pinnedRepos:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Pinned repositories updated
+ */
+router.put('/pinned', protect, updatePinnedRepos);
+
+/**
+ * @swagger
+ * /api/v1/users/u/{username}/contributions:
+ *   get:
+ *     summary: Get contribution heatmap data for a user
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         schema:
+ *           type: string
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Heatmap data
+ */
+router.get('/u/:username/contributions', protect, getUserContributions);
 
 module.exports = router;
