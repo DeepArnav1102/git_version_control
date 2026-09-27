@@ -11,9 +11,12 @@ const protect = asyncHandler(async (req, res, next) => {
     if (req.cookies && req.cookies.accessToken) {
         token = req.cookies.accessToken;
     }
-    // 2. Fallback to Bearer header (CLI Flow & PATs)
+    // 2. Fallback to Bearer header or X-Rusty-Token (CLI Flow & PATs)
     else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
+    }
+    else if (req.headers['x-rusty-token']) {
+        token = req.headers['x-rusty-token'];
     }
     
     if (!token) {

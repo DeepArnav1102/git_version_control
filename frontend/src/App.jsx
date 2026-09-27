@@ -15,6 +15,8 @@ const OnboardingFlow = lazy(() => import('./pages/Onboarding/OnboardingFlow'));
 const Dashboard      = lazy(() => import('./pages/Dashboard'));
 const Profile        = lazy(() => import('./pages/Profile'));
 const IDE            = lazy(() => import('./pages/IDE'));
+const CreateRepo     = lazy(() => import('./pages/CreateRepo'));
+const RepoDetail     = lazy(() => import('./pages/RepoDetail'));
 
 const PageFallback = () => (
   <div className="flex items-center justify-center w-full h-full py-20">
@@ -77,6 +79,27 @@ function App() {
         <Route path="/ide" element={
           <Suspense fallback={<PageFallback />}>
             <IDE />
+          </Suspense>
+        } />
+        <Route path="/new/repository" element={
+          <Suspense fallback={<PageFallback />}>
+            <MainLayout>
+              <CreateRepo />
+            </MainLayout>
+          </Suspense>
+        } />
+        <Route path="/repo/:owner/:repo" element={
+          <Suspense fallback={<PageFallback />}>
+            <MainLayout>
+              <RepoDetail />
+            </MainLayout>
+          </Suspense>
+        } />
+        <Route path="/repo/:owner/:repo/*" element={
+          <Suspense fallback={<PageFallback />}>
+            <MainLayout>
+              <RepoDetail />
+            </MainLayout>
           </Suspense>
         } />
         <Route element={<AuthLayout />}>
