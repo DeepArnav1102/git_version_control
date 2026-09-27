@@ -36,15 +36,22 @@ const generateAndSendOtp = async (user, purpose) => {
         expiresAt,
     });
 
-    // 5. Trigger Resend email based on purpose
-    if (purpose === 'REGISTRATION_VERIFY') {
-        await emailService.sendVerificationEmail(user.email, rawOtp);
-    } else if (purpose === 'PASSWORD_RESET') {
-        await emailService.sendPasswordResetEmail(user.email, rawOtp);
-    } else if (purpose === 'PAT_ACTION') {
-        await emailService.sendPatSecurityCodeEmail(user.email, rawOtp);
-    } else {
-        logger.warn(`Unknown OTP purpose: ${purpose}`);
+    // Always log in development for easy testing
+    logger.info(`🔑 [OTP] Generated OTP for ${user.email}: ${rawOtp} (Purpose: ${purpose})`);
+
+    // 5. Trigger email based on purpose (catch email errors so local development is not blocked)
+    try {
+        if (purpose === 'REGISTRATION_VERIFY') {
+            await emailService.sendVerificationEmail(user.email, rawOtp);
+        } else if (purpose === 'PASSWORD_RESET') {
+            await emailService.sendPasswordResetEmail(user.email, rawOtp);
+        } else if (purpose === 'PAT_ACTION') {
+            await emailService.sendPatSecurityCodeEmail(user.email, rawOtp);
+        } else {
+            logger.warn(`Unknown OTP purpose: ${purpose}`);
+        }
+    } catch (emailErr) {
+        logger.warn(`Could not dispatch email to ${user.email} (${emailErr.message}). OTP is: ${rawOtp}`);
     }
 };
 
