@@ -172,7 +172,9 @@ export default function Navbar() {
             <GitPullRequest size={15} strokeWidth={1.8} />
           </IconBox>
 
-          <LottieIcon src={folderAnim} trigger="hover" />
+          <IconBox onClick={() => navigate('/profile?tab=repositories')} title="Repositories">
+            <LottieIcon src={folderAnim} trigger="hover" />
+          </IconBox>
           <LottieIcon src={notificationAnim} trigger="hover" />
 
           {/* Profile avatar & dropdown */}
