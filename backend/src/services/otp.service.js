@@ -36,8 +36,10 @@ const generateAndSendOtp = async (user, purpose) => {
         expiresAt,
     });
 
-    // Always log in development for easy testing
-    logger.info(`🔑 [OTP] Generated OTP for ${user.email}: ${rawOtp} (Purpose: ${purpose})`);
+    // Always log in development for easy testing — NEVER in production
+    if (process.env.NODE_ENV !== 'production') {
+        logger.info(`🔑 [OTP DEV] Generated OTP for ${user.email}: ${rawOtp} (Purpose: ${purpose})`);
+    }
 
     // 5. Trigger email based on purpose (catch email errors so local development is not blocked)
     try {

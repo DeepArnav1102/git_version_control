@@ -95,6 +95,12 @@ const userSchema = new mongoose.Schema(
                 default: '#6d28d9', // violet-700
             },
         },
+        pinnedRepos: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Repository',
+            }
+        ]
     },
     { timestamps: true }
 );

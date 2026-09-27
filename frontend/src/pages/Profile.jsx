@@ -5,6 +5,7 @@ import useAuthStore from '../store/useAuthStore';
 import ProfileView from '../components/profile/ProfileView';
 import ProfileEdit from '../components/profile/ProfileEdit';
 import ProfileReadme from '../components/profile/ProfileReadme';
+import ProfileOverview from '../components/profile/ProfileOverview';
 import ProfileTokens from '../components/profile/ProfileTokens';
 import ProfileRepos from '../components/profile/ProfileRepos';
 import FloatingNav from '../components/profile/FloatingNav';
@@ -174,7 +175,7 @@ export default function Profile() {
           RIGHT CONTENT AREA
           ════════════════════════════════════════════ */}
       <div className="flex-1 min-w-0 pr-12">
-        {activeTab === 'overview' && <ProfileReadme user={user} />}
+        {activeTab === 'overview' && <ProfileOverview user={user} isOwner={isOwner} />}
 
         {activeTab === 'repositories' && <ProfileRepos user={user} />}
 
