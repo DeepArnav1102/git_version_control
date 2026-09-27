@@ -4,6 +4,7 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
 const mongoose = require('mongoose');
+const { generateAndSendOtp, verifyOtp } = require('../services/otp.service');
 
 // Helper to resolve user from owner param (username, email, or ObjectId)
 const resolveUser = async (ownerParam) => {
@@ -69,6 +70,52 @@ const createRepo = asyncHandler(async (req, res) => {
         success: true,
         message: 'Repository created successfully',
         data: repo,
+    });
+});
+
+// ─── Update Repository ────────────────────────────────────────────────
+const updateRepo = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { name, description, isPrivate, defaultBranch } = req.body;
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to edit this repository');
+    }
+
+    if (name) {
+        const cleanName = name.replace(/\.git$/, '').toLowerCase().trim();
+        if (!/^[a-zA-Z0-9_\-.]+$/.test(cleanName)) {
+            throw new ApiError(400, 'Repository name can only contain letters, numbers, hyphens, and underscores');
+        }
+        if (cleanName !== repoDoc.name) {
+            const existing = await Repository.findOne({ owner: req.user._id, name: cleanName });
+            if (existing) {
+                throw new ApiError(400, `Repository '${cleanName}' already exists`);
+            }
+            repoDoc.name = cleanName;
+        }
+    }
+
+    if (description !== undefined) repoDoc.description = description;
+    if (isPrivate !== undefined) repoDoc.isPrivate = Boolean(isPrivate);
+    
+    if (defaultBranch) {
+        const branchExists = repoDoc.branches.some(b => b.name === defaultBranch);
+        if (!branchExists && repoDoc.branches.length > 0) {
+            throw new ApiError(400, `Branch '${defaultBranch}' does not exist`);
+        }
+        repoDoc.defaultBranch = defaultBranch;
+    }
+
+    await repoDoc.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Repository updated successfully',
+        data: repoDoc,
     });
 });
 
@@ -184,6 +231,13 @@ const getRepoTree = asyncHandler(async (req, res) => {
         commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
     } catch {
         throw new ApiError(500, 'Invalid commit format');
+    }
+
+    if (commitData && commitData.author) {
+        const authorUser = await User.findOne({ username: commitData.author.toLowerCase() }).select('profilePicture');
+        if (authorUser && authorUser.profilePicture) {
+            commitData.authorProfilePicture = authorUser.profilePicture;
+        }
     }
 
     // 3. Load root tree
@@ -370,14 +424,28 @@ const getRepoCommits = asyncHandler(async (req, res) => {
                 message: commitData.message,
                 tree: commitData.tree,
                 parent: commitData.parent,
-                author: repoDoc.latestCommit?.author || 'Contributor',
-                date: repoDoc.latestCommit?.date || obj.createdAt,
+                author: commitData.author || repoDoc.latestCommit?.author || 'Contributor',
+                date: commitData.date || repoDoc.latestCommit?.date || obj.createdAt,
             });
             currentHash = commitData.parent || null;
         } catch {
             break;
         }
     }
+
+    // Resolve profile pictures for unique authors
+    const uniqueAuthors = [...new Set(commits.map(c => c.author.toLowerCase()))];
+    const authorUsers = await User.find({ username: { $in: uniqueAuthors } }).select('username profilePicture');
+    const authorPfpMap = {};
+    authorUsers.forEach(u => {
+        authorPfpMap[u.username.toLowerCase()] = u.profilePicture;
+    });
+
+    commits.forEach(c => {
+        if (authorPfpMap[c.author.toLowerCase()]) {
+            c.authorProfilePicture = authorPfpMap[c.author.toLowerCase()];
+        }
+    });
 
     res.status(200).json({
         success: true,
@@ -517,8 +585,61 @@ const updateRef = asyncHandler(async (req, res) => {
     });
 });
 
+const requestDeleteOtp = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    
+    if (!repoDoc) {
+        throw new ApiError(404, 'Repository not found');
+    }
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to delete this repository');
+    }
+
+    await generateAndSendOtp(req.user, 'REPO_DELETE');
+
+    res.status(200).json({
+        success: true,
+        message: 'OTP sent to your registered email for repository deletion'
+    });
+});
+
+// ─── Delete Repository ────────────────────────────────────────────────
+const deleteRepo = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { otp } = req.body;
+    
+    if (!otp) {
+        throw new ApiError(400, 'OTP is required to delete repository');
+    }
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    
+    if (!repoDoc) {
+        throw new ApiError(404, 'Repository not found');
+    }
+
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to delete this repository');
+    }
+
+    await verifyOtp(req.user._id, otp, 'REPO_DELETE');
+
+    // Delete all GitObjects associated with this repository
+    await GitObject.deleteMany({ repositoryId: repoDoc._id });
+    
+    // Delete the repository document itself
+    await Repository.findByIdAndDelete(repoDoc._id);
+
+    res.status(200).json({
+        success: true,
+        message: 'Repository deleted successfully'
+    });
+});
+
 module.exports = {
     createRepo,
+    updateRepo,
     getUserRepos,
     getReposByUsername,
     getRepoDetails,
@@ -528,4 +649,6 @@ module.exports = {
     checkObjectExists,
     storeObject,
     updateRef,
+    requestDeleteOtp,
+    deleteRepo,
 };

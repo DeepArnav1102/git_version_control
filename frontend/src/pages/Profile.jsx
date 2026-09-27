@@ -193,7 +193,9 @@ export default function Profile() {
                 Starred
               </p>
               <p className="text-xs text-gray-300">
-                You haven't starred any repositories yet.
+                {isOwner 
+                  ? "You haven't starred any repositories yet." 
+                  : `${user?.name || user?.username} hasn't starred any repositories yet.`}
               </p>
             </div>
           </motion.main>

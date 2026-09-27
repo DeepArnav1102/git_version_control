@@ -47,6 +47,8 @@ const generateAndSendOtp = async (user, purpose) => {
             await emailService.sendPasswordResetEmail(user.email, rawOtp);
         } else if (purpose === 'PAT_ACTION') {
             await emailService.sendPatSecurityCodeEmail(user.email, rawOtp);
+        } else if (purpose === 'REPO_DELETE') {
+            await emailService.sendRepoDeleteEmail(user.email, rawOtp);
         } else {
             logger.warn(`Unknown OTP purpose: ${purpose}`);
         }

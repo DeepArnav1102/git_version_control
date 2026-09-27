@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Book, Lock, Globe, Plus } from 'lucide-react';
 import apiClient from '../../lib/axios';
 import { jsonToast } from '../../lib/jsonToast';
+import useAuthStore from '../../store/useAuthStore';
 
 function timeAgo(dateStr) {
   const now = new Date();
@@ -21,15 +22,18 @@ function timeAgo(dateStr) {
 
 export default function ProfileRepos({ user, onRepoCountChange }) {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuthStore();
+  const isOwner = !user || user.username === currentUser?.username;
   const [repos, setRepos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     const fetchRepos = async () => {
+      if (!user?.username) return;
       try {
         setLoading(true);
-        const res = await apiClient.get('/repos');
+        const res = await apiClient.get(`/repos/user/${user.username}`);
         const repoList = res.data.data || [];
         setRepos(repoList);
         if (onRepoCountChange) {
@@ -42,7 +46,7 @@ export default function ProfileRepos({ user, onRepoCountChange }) {
       }
     };
     fetchRepos();
-  }, [onRepoCountChange]);
+  }, [onRepoCountChange, user?.username]);
 
   const ownerName = user?.username || user?.email?.split('@')[0] || 'user';
 
@@ -79,13 +83,15 @@ export default function ProfileRepos({ user, onRepoCountChange }) {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 bg-white placeholder:text-gray-400"
         />
-        <button
-          onClick={() => navigate('/new/repository')}
-          className="flex items-center gap-1.5 px-3 py-2 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
-        >
-          <Plus size={13} />
-          New
-        </button>
+        {isOwner && (
+          <button
+            onClick={() => navigate('/new/repository')}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
+          >
+            <Plus size={13} />
+            New
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -100,7 +106,9 @@ export default function ProfileRepos({ user, onRepoCountChange }) {
             <p className="text-xs text-gray-300">
               {search
                 ? 'Try a different search term.'
-                : 'Create your first repository to get started.'}
+                : isOwner 
+                  ? 'Create your first repository to get started.'
+                  : `${user?.name || user?.username} doesn't have any public repositories yet.`}
             </p>
           </div>
         </div>

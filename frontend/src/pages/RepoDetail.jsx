@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CircleDot, GitPullRequest } from 'lucide-react';
 import {
   BookMarked,
   GitBranch,
@@ -24,10 +25,18 @@ import {
   PanelLeftClose,
   PanelLeft,
   Search,
+  Pin,
+  GitFork,
+  Monitor,
+  UserPlus,
+  Code
 } from 'lucide-react';
 import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
+
+const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 import useAuthStore from '../store/useAuthStore';
+import RepoFloatingNav from '../components/profile/RepoFloatingNav';
 
 // ─── File icon helper based on extension ────────────────────────────────
 function getFileIcon(fileName) {
@@ -221,12 +230,105 @@ export default function RepoDetail() {
   const [showCloneDropdown, setShowCloneDropdown] = useState(false);
   const [copiedClone, setCopiedClone] = useState(false);
   const [copiedFile, setCopiedFile] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabParam || 'code');
   const [loading, setLoading] = useState(true);
   const [loadingFile, setLoadingFile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [repoSettings, setRepoSettings] = useState({
+    name: '',
+    description: '',
+    isPrivate: false,
+    defaultBranch: 'main'
+  });
+  const [updatingSettings, setUpdatingSettings] = useState(false);
+
+  const isOwner = user && user.username === owner;
 
   const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
   const remoteUrl = `${apiBase}/repos/${owner}/${repo}`;
+
+  useEffect(() => {
+    const nextTab = tabParam || 'code';
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
+    }
+  }, [tabParam, activeTab]);
+
+  useEffect(() => {
+    if (repoData) {
+      setRepoSettings({
+        name: repoData.name || '',
+        description: repoData.description || '',
+        isPrivate: repoData.isPrivate || false,
+        defaultBranch: repoData.defaultBranch || 'main'
+      });
+    }
+  }, [repoData]);
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    if (newTab !== 'code') {
+      setSearchParams({ tab: newTab }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
+
+  const handleUpdateRepo = async (e) => {
+    e.preventDefault();
+    try {
+      setUpdatingSettings(true);
+      const res = await apiClient.patch(`/repos/${owner}/${repo}`, repoSettings);
+      jsonToast.success('Settings updated successfully');
+      
+      if (res.data.data.name !== repo) {
+        navigate(`/repo/${owner}/${res.data.data.name}?tab=settings`);
+      } else {
+        setRepoData(res.data.data);
+      }
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || 'Failed to update settings');
+    } finally {
+      setUpdatingSettings(false);
+    }
+  };
+
+  const handleRequestDeleteOtp = async () => {
+    if (!window.confirm(`Are you absolutely sure you want to delete ${owner}/${repo}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      await apiClient.post(`/repos/${owner}/${repo}/request-delete-otp`);
+      jsonToast.success('Security code sent to your email');
+      setOtpSent(true);
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || 'Failed to request OTP');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteRepo = async () => {
+    if (!deleteOtp) {
+      jsonToast.error('Please enter the OTP');
+      return;
+    }
+    try {
+      setDeleting(true);
+      await apiClient.delete(`/repos/${owner}/${repo}`, { data: { otp: deleteOtp } });
+      jsonToast.success('Repository deleted successfully');
+      navigate('/dashboard');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || 'Failed to delete repository');
+      setDeleting(false);
+    }
+  };
 
   // Helper to toggle folder expand/collapse in sidebar
   const toggleFolder = useCallback((folderPath) => {
@@ -474,19 +576,18 @@ export default function RepoDetail() {
   const isEmpty = treeData?.isEmpty || (!treeData?.entries?.length && !treeData?.commit);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 font-sans">
+    <motion.div 
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      transition={{ duration: 0.3 }}
+      className="w-full px-6 md:pl-10 md:pr-24 py-8 font-sans"
+    >
       {/* ── Top Header ────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-gray-200">
         <div>
           <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-gray-500 hover:text-gray-900 font-medium"
-            >
-              {owner}
-            </button>
-            <span className="text-gray-400">/</span>
-            <span className="font-bold text-gray-900 text-lg">{repoData.name}</span>
+            <span className="font-bold text-gray-900 text-xl">{repoData.name}</span>
             <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-gray-300 bg-gray-50 text-gray-700 ml-2">
               {repoData.isPrivate ? (
                 <>
@@ -505,149 +606,197 @@ export default function RepoDetail() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          {/* Branch selector */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors">
-            <GitBranch size={13} />
-            <span>{currentBranch}</span>
-          </div>
-
-          {/* Commits count */}
-          <button
-            onClick={() => setShowCommitsModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 transition-colors cursor-pointer"
-          >
-            <History size={13} />
-            <span>{commits.length} {commits.length === 1 ? 'commit' : 'commits'}</span>
-          </button>
-
-          {/* Clone / Remote Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowCloneDropdown(!showCloneDropdown)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
-            >
-              <Terminal size={13} />
-              <span>Connect / Push</span>
-            </button>
-
-            {showCloneDropdown && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-xl p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
-                    Rusty Remote URL
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-300 rounded-lg p-2 mb-3">
-                  <span className="text-[11px] font-mono text-gray-700 truncate select-all flex-1">
-                    {remoteUrl}
-                  </span>
-                  <button
-                    onClick={() => copyToClipboard(remoteUrl)}
-                    className="p-1 text-gray-500 hover:text-black transition-colors cursor-pointer"
-                    title="Copy URL"
-                  >
-                    {copiedClone ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                  </button>
-                </div>
-
-                <div className="text-[11px] text-gray-600 space-y-2">
-                  <p className="font-semibold text-gray-800">Add remote in Rusty CLI:</p>
-                  <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
-                    rusty remote add origin {remoteUrl}
-                  </pre>
-                  <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
-                    rusty push
-                  </pre>
-                </div>
-              </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Stats Buttons */}
+          <div className="hidden md:flex items-center gap-2 mr-2">
+            {isOwner && (
+              <button className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors shadow-sm cursor-pointer">
+                <Pin size={14} className="text-gray-500" />
+                <span>Pin</span>
+              </button>
             )}
+            <div className="flex rounded-md shadow-sm">
+              <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <Eye size={14} className="text-gray-500" />
+                <span>Watch</span>
+                <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.watchersCount || 0}</span>
+              </button>
+              <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <ChevronDown size={14} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="flex rounded-md shadow-sm">
+              <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <GitFork size={14} className="text-gray-500" />
+                <span>Fork</span>
+                <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.forksCount || 0}</span>
+              </button>
+              <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <ChevronDown size={14} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="flex rounded-md shadow-sm">
+              <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <Star size={14} className="text-gray-500" />
+                <span>Star</span>
+                <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.starsCount || 0}</span>
+              </button>
+              <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
+                <ChevronDown size={14} className="text-gray-500" />
+              </button>
+            </div>
           </div>
+
+          {!isEmpty && (
+            <>
+              {/* Branch selector */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors">
+                <GitBranch size={13} />
+                <span>{currentBranch}</span>
+              </div>
+
+              {/* Commits count */}
+              <button
+                onClick={() => setShowCommitsModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 transition-colors cursor-pointer"
+              >
+                <History size={13} />
+                <span>{commits.length} {commits.length === 1 ? 'commit' : 'commits'}</span>
+              </button>
+
+              {/* Clone / Remote Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowCloneDropdown(!showCloneDropdown)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                >
+                  <Terminal size={13} />
+                  <span>Connect / Push</span>
+                </button>
+
+                {showCloneDropdown && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl border border-gray-200 shadow-xl p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                        Rusty Remote URL
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-300 rounded-lg p-2 mb-3">
+                      <span className="text-[11px] font-mono text-gray-700 truncate select-all flex-1">
+                        {remoteUrl}
+                      </span>
+                      <button
+                        onClick={() => copyToClipboard(remoteUrl)}
+                        className="p-1 text-gray-500 hover:text-black transition-colors cursor-pointer"
+                        title="Copy URL"
+                      >
+                        {copiedClone ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-gray-600 space-y-2">
+                      <p className="font-semibold text-gray-800">Add remote in Rusty CLI:</p>
+                      <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
+                        rusty remote add origin {remoteUrl}
+                      </pre>
+                      <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
+                        rusty push
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── EMPTY REPO VIEW ────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {activeTab === 'code' && (
+          <motion.div
+            key="tab-code"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+          >
+          {/* ── EMPTY REPO VIEW ────────────────────────────────────── */}
       {isEmpty ? (
-        <div className="mt-8 bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                !
-              </span>
-              <h2 className="text-lg font-bold text-gray-900">
-                Quick setup — push your code using Rusty CLI
-              </h2>
+        <div className="mt-6 space-y-6">
+          {/* Top Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Card 1: Codespaces */}
+            <div className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm hover:border-gray-300 transition-colors">
+              <Monitor size={24} strokeWidth={1.5} className="text-gray-600 mb-4" />
+              <h3 className="font-semibold text-gray-900 text-[15px] mb-1">Start coding with Codespaces</h3>
+              <p className="text-xs text-gray-500 mb-4 h-8">
+                Add a README file and start coding in a secure, configurable, and dedicated development environment.
+              </p>
+              <button className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-md text-xs font-semibold text-gray-700 transition-colors cursor-pointer">
+                Create a codespace
+              </button>
             </div>
-            <p className="text-xs text-gray-600 mb-6">
-              Get started by authenticating with your website email and Personal Access Token, then push your repository!
-            </p>
 
-            {/* Step 1: Auth */}
-            <div className="mb-6 p-4 rounded-lg bg-amber-50/60 border border-amber-200 text-xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-amber-900 flex items-center gap-1.5">
-                  <Key size={14} /> Step 1: Authenticate Rusty CLI
-                </span>
+            {/* Card 2: Collaborators */}
+            <div className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm hover:border-gray-300 transition-colors">
+              <UserPlus size={24} strokeWidth={1.5} className="text-gray-600 mb-4" />
+              <h3 className="font-semibold text-gray-900 text-[15px] mb-1">Add collaborators to this repository</h3>
+              <p className="text-xs text-gray-500 mb-4 h-8">
+                Search for people using their GitHub username or email address.
+              </p>
+              <button className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-md text-xs font-semibold text-gray-700 transition-colors cursor-pointer">
+                Invite collaborators
+              </button>
+            </div>
+          </div>
+
+          {/* Command Line Instructions */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-semibold text-gray-900 text-[15px] mb-2">
+                ...or create a new repository on the command line
+              </h3>
+              <div className="relative group border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                <pre className="p-4 text-gray-800 font-mono text-[13px] leading-relaxed overflow-x-auto">
+                  <div>echo "# {repoData.name}" &gt;&gt; README.md</div>
+                  <div>rusty init</div>
+                  <div>rusty add README.md</div>
+                  <div>rusty commit -m "first commit"</div>
+                  <div>rusty branch -M main</div>
+                  <div>rusty remote add origin {remoteUrl}</div>
+                  <div>rusty push -u origin main</div>
+                </pre>
                 <button
-                  onClick={() => navigate('/profile?tab=tokens&action=new')}
-                  className="text-amber-800 underline font-semibold hover:text-amber-950 cursor-pointer"
+                  onClick={() =>
+                    copyToClipboard(
+                      `echo "# ${repoData.name}" >> README.md\nrusty init\nrusty add README.md\nrusty commit -m "first commit"\nrusty branch -M main\nrusty remote add origin ${remoteUrl}\nrusty push -u origin main`
+                    )
+                  }
+                  className="absolute top-2 right-2 p-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-sm opacity-0 group-hover:opacity-100"
                 >
-                  Generate Token in Settings →
+                  <Copy size={12} />
                 </button>
               </div>
-              <p className="text-amber-800 mb-2">
-                Generate a PAT in your account settings, then authenticate in your terminal:
-              </p>
-              <pre className="p-2.5 bg-gray-900 text-emerald-400 rounded-md font-mono text-[11px] overflow-x-auto">
-                rusty login
-              </pre>
             </div>
 
-            {/* Step 2: Push new repository */}
-            <div className="space-y-4 text-xs">
-              <div>
-                <p className="font-bold text-gray-800 mb-1.5">
-                  …or create a new repository on the command line:
-                </p>
-                <div className="relative group">
-                  <pre className="p-3 bg-gray-900 text-gray-100 rounded-lg font-mono text-[11px] overflow-x-auto space-y-1">
-                    <div>rusty init</div>
-                    <div>rusty add .</div>
-                    <div>rusty commit -m "First commit"</div>
-                    <div>rusty remote add origin {remoteUrl}</div>
-                    <div>rusty push</div>
-                  </pre>
-                  <button
-                    onClick={() =>
-                      copyToClipboard(
-                        `rusty init\nrusty add .\nrusty commit -m "First commit"\nrusty remote add origin ${remoteUrl}\nrusty push`
-                      )
-                    }
-                    className="absolute top-2.5 right-2.5 p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                  >
-                    <Copy size={12} /> Copy
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <p className="font-bold text-gray-800 mb-1.5">
-                  …or push an existing Rusty repository:
-                </p>
-                <div className="relative group">
-                  <pre className="p-3 bg-gray-900 text-gray-100 rounded-lg font-mono text-[11px] overflow-x-auto space-y-1">
-                    <div>rusty remote add origin {remoteUrl}</div>
-                    <div>rusty push</div>
-                  </pre>
-                  <button
-                    onClick={() =>
-                      copyToClipboard(`rusty remote add origin ${remoteUrl}\nrusty push`)
-                    }
-                    className="absolute top-2.5 right-2.5 p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                  >
-                    <Copy size={12} /> Copy
-                  </button>
-                </div>
+            <div>
+              <h3 className="font-semibold text-gray-900 text-[15px] mb-2">
+                ...or push an existing repository from the command line
+              </h3>
+              <div className="relative group border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                <pre className="p-4 text-gray-800 font-mono text-[13px] leading-relaxed overflow-x-auto">
+                  <div>rusty remote add origin {remoteUrl}</div>
+                  <div>rusty branch -M main</div>
+                  <div>rusty push -u origin main</div>
+                </pre>
+                <button
+                  onClick={() =>
+                    copyToClipboard(`rusty remote add origin ${remoteUrl}\nrusty branch -M main\nrusty push -u origin main`)
+                  }
+                  className="absolute top-2 right-2 p-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 rounded-md text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-sm opacity-0 group-hover:opacity-100"
+                >
+                  <Copy size={12} />
+                </button>
               </div>
             </div>
           </div>
@@ -659,9 +808,12 @@ export default function RepoDetail() {
           {treeData?.commit && (
             <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-[10px]">
-                  {treeData.commit.author?.[0]?.toUpperCase() || 'U'}
-                </span>
+                <img
+                  src={treeData.commit.authorProfilePicture || defaultPfp}
+                  alt={treeData.commit.author}
+                  className="w-5 h-5 rounded-full object-cover border border-gray-200"
+                  onError={(e) => { e.target.src = defaultPfp; }}
+                />
                 <span className="font-semibold text-gray-900">
                   {treeData.commit.author}
                 </span>
@@ -904,6 +1056,171 @@ export default function RepoDetail() {
           </div>
         </div>
       )}
+      </motion.div>
+      )}
+
+        {activeTab === 'pull-requests' && (
+          <motion.div
+            key="tab-pr"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            className="mt-6 bg-white border border-gray-200 rounded-xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[300px]"
+          >
+          <GitPullRequest size={32} className="text-gray-300 mb-3" />
+          <h3 className="text-lg font-bold text-gray-800">No pull requests yet</h3>
+          <p className="text-sm text-gray-500 mt-1">Welcome to pull requests!</p>
+        </motion.div>
+      )}
+
+        {activeTab === 'issues' && (
+          <motion.div
+            key="tab-issues"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            className="mt-6 bg-white border border-gray-200 rounded-xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[300px]"
+          >
+          <CircleDot size={32} className="text-gray-300 mb-3" />
+          <h3 className="text-lg font-bold text-gray-800">No issues found</h3>
+          <p className="text-sm text-gray-500 mt-1">Welcome to issues!</p>
+        </motion.div>
+      )}
+
+        {activeTab === 'settings' && isOwner && (
+          <motion.div
+            key="tab-settings"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+            className="mt-6 w-full space-y-6"
+          >
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-bold text-gray-900">General Settings</h3>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleUpdateRepo} className="space-y-4 max-w-2xl">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Repository Name</label>
+                  <input
+                    type="text"
+                    value={repoSettings.name}
+                    onChange={(e) => setRepoSettings({ ...repoSettings, name: e.target.value })}
+                    className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={repoSettings.description}
+                    onChange={(e) => setRepoSettings({ ...repoSettings, description: e.target.value })}
+                    className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  />
+                </div>
+                <div className="flex items-center gap-4 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      checked={!repoSettings.isPrivate}
+                      onChange={() => setRepoSettings({ ...repoSettings, isPrivate: false })}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700 font-medium">Public</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="visibility"
+                      checked={repoSettings.isPrivate}
+                      onChange={() => setRepoSettings({ ...repoSettings, isPrivate: true })}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700 font-medium">Private</span>
+                  </label>
+                </div>
+                {repoData?.branches?.length > 0 && (
+                  <div className="pt-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Default Branch</label>
+                    <select
+                      value={repoSettings.defaultBranch}
+                      onChange={(e) => setRepoSettings({ ...repoSettings, defaultBranch: e.target.value })}
+                      className="w-full md:w-64 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors cursor-pointer"
+                    >
+                      {repoData.branches.map(b => (
+                        <option key={b.name} value={b.name}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={updatingSettings}
+                    className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {updatingSettings ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div className="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-red-200 bg-red-50">
+              <h3 className="text-lg font-bold text-red-900">Danger Zone</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm">Delete this repository</h4>
+                  <p className="text-[11px] text-gray-600 mt-1 max-w-xl">
+                    Once you delete a repository, there is no going back. Please be certain.
+                    This will permanently delete the repo, along with its commits, blob tree, and all git objects.
+                  </p>
+                </div>
+                {!otpSent ? (
+                  <button
+                    onClick={handleRequestDeleteOtp}
+                    disabled={deleting}
+                    className="px-3 py-1.5 bg-white text-red-600 hover:bg-red-50 border border-red-200 hover:border-red-300 rounded text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                  >
+                    {deleting ? 'Requesting...' : 'Request Delete'}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter 6-digit OTP"
+                      value={deleteOtp}
+                      onChange={(e) => setDeleteOtp(e.target.value)}
+                      className="w-32 px-2 py-1.5 text-xs bg-white border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500 text-center tracking-widest"
+                      maxLength={6}
+                    />
+                    <button
+                      onClick={handleDeleteRepo}
+                      disabled={deleting || deleteOtp.length !== 6}
+                      className="px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+                    >
+                      {deleting ? 'Deleting...' : 'Confirm'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* Floating Navigation Sidebar */}
+      <RepoFloatingNav activeTab={activeTab} setActiveTab={handleTabChange} isOwner={isOwner} />
 
       {/* ── Commits History Modal ─────────────────────────────── */}
       {showCommitsModal && (
@@ -925,14 +1242,32 @@ export default function RepoDetail() {
                 <p className="text-xs text-gray-500 text-center py-6">No commit history found.</p>
               ) : (
                 commits.map((c) => (
-                  <div key={c.hash} className="p-3 hover:bg-gray-50 rounded-lg flex items-start justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-semibold text-gray-900">{c.message}</p>
-                      <p className="text-gray-500 text-[11px] mt-0.5">by {c.author}</p>
+                  <div key={c.hash} className="px-4 py-3 hover:bg-gray-50 flex items-start justify-between gap-3 text-sm border-b border-gray-100 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{c.message}</p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <img
+                          src={c.authorProfilePicture || defaultPfp}
+                          alt={c.author}
+                          className="w-5 h-5 rounded-full object-cover border border-gray-200"
+                          onError={(e) => { e.target.src = defaultPfp; }}
+                        />
+                        <p className="text-gray-500 text-xs">
+                          <span className="font-semibold text-gray-700">{c.author}</span> committed {c.date ? new Date(c.date).toLocaleDateString() : 'recently'}
+                        </p>
+                      </div>
                     </div>
-                    <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 text-[11px] flex-shrink-0">
-                      {c.hash?.substring(0, 7)}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+                      <span className="border border-green-300 text-green-700 bg-green-50 px-2 py-0.5 rounded-full text-[10px] font-semibold hidden sm:inline-block">
+                        Verified
+                      </span>
+                      <span className="font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded-md text-gray-600 text-xs cursor-pointer hover:bg-gray-200" title="Copy full SHA" onClick={() => copyToClipboard(c.hash)}>
+                        {c.hash?.substring(0, 7)}
+                      </span>
+                      <button className="text-gray-400 hover:text-blue-600 transition-colors border border-gray-200 rounded-md p-1 bg-white cursor-pointer shadow-sm hover:shadow" title="Browse files at this point in history">
+                        <Code size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -940,7 +1275,7 @@ export default function RepoDetail() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
