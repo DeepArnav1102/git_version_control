@@ -51,7 +51,7 @@ export const jsonToast = {
   error: (message) => {
     toast.custom((t) => <BouncyToast t={t} message={message} type="error" />);
   },
-  confirm: (message, onConfirm) => {
+  confirm: (message, onConfirm, actionText = 'Confirm') => {
     toast.custom((t) => (
       <div className="flex flex-col gap-3 p-4 bg-white rounded-xl shadow-xl border border-gray-200 min-w-[280px]">
         <div className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export const jsonToast = {
             }} 
             className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
           >
-            Revoke
+            {actionText}
           </button>
         </div>
       </div>

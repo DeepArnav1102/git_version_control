@@ -1,5 +1,5 @@
 const express = require('express');
-const { protect } = require('../middlewares/auth.middleware');
+const { protect, protectOptional } = require('../middlewares/auth.middleware');
 const { checkUsernameLimiter } = require('../middlewares/rateLimit.middleware');
 const validate = require('../middlewares/validate.middleware');
 const {
@@ -12,6 +12,7 @@ const {
     getPublicProfile,
     updatePinnedRepos,
     getUserContributions,
+    toggleFollowUser,
 } = require('../controllers/user.controller');
 
 const {
@@ -38,7 +39,7 @@ const router = express.Router();
  *       401:
  *         description: Not authorized
  */
-router.get('/me', protect, getMe);
+router.get('/me', protectOptional, getMe);
 
 /**
  * @swagger
@@ -84,7 +85,7 @@ router.get('/check-username', checkUsernameLimiter, validate(checkUsernameSchema
  *       200:
  *         description: Search results
  */
-router.get('/search', protect, searchUsers);
+router.get('/search', protectOptional, searchUsers);
 
 /**
  * @swagger
@@ -247,7 +248,7 @@ router.patch('/dashboard-card', protect, validate(updateDashboardCardSchema), up
  *       404:
  *         description: User not found
  */
-router.get('/u/:username', protect, getPublicProfile);
+router.get('/u/:username', protectOptional, getPublicProfile);
 
 /**
  * @swagger
@@ -293,6 +294,26 @@ router.put('/pinned', protect, updatePinnedRepos);
  *       200:
  *         description: Heatmap data
  */
-router.get('/u/:username/contributions', protect, getUserContributions);
+router.get('/u/:username/contributions', getUserContributions);
+
+/**
+ * @swagger
+ * /api/v1/users/u/{username}/follow:
+ *   post:
+ *     summary: Toggle follow/unfollow a user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successfully toggled follow
+ */
+router.post('/u/:username/follow', protect, toggleFollowUser);
 
 module.exports = router;

@@ -57,6 +57,16 @@ class FileService {
     }
 
     /**
+     * Clears the user's entire workspace by deleting and recreating it.
+     */
+    static async clearWorkspace(userId) {
+        const userWorkspace = this.getSecurePath(userId);
+        await fs.rm(userWorkspace, { recursive: true, force: true });
+        await fs.mkdir(userWorkspace, { recursive: true });
+        return userWorkspace;
+    }
+
+    /**
      * Recursively reads a directory to build a file tree.
      *
      * @param {string} dirPath - The absolute path of the directory.

@@ -66,12 +66,32 @@ const repositorySchema = new mongoose.Schema(
                 default: Date.now,
             },
         },
+        isFork: {
+            type: Boolean,
+            default: false
+        },
+        parentRepo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Repository',
+            default: null
+        },
+        rootRepo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Repository',
+            default: null
+        }
     },
     { timestamps: true }
 );
 
 // Compound unique index so each user cannot have two repositories with the same name
 repositorySchema.index({ owner: 1, name: 1 }, { unique: true });
+
+// Index for efficiently sorting a user's repositories by recent updates
+repositorySchema.index({ owner: 1, updatedAt: -1 });
+
+// Index for filtering a user's repositories by privacy (e.g., getting public repos)
+repositorySchema.index({ owner: 1, isPrivate: 1 });
 
 const Repository = mongoose.model('Repository', repositorySchema);
 module.exports = Repository;

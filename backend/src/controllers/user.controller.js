@@ -5,10 +5,22 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 
 const getMe = asyncHandler(async (req, res) => {
+    if (!req.user) {
+        return res.status(200).json({
+            success: true,
+            data: { user: null }
+        });
+    }
+
     const user = await User.findById(req.user._id)
         .populate({
             path: 'pinnedRepos',
-            select: 'name description language isPrivate _id owner defaultBranch',
+            select: 'name description language isPrivate _id owner defaultBranch starsCount forksCount',
+            populate: { path: 'owner', select: 'username' }
+        })
+        .populate({
+            path: 'starredRepos',
+            select: 'name description language isPrivate _id owner defaultBranch starsCount forksCount',
             populate: { path: 'owner', select: 'username' }
         })
         .select('-passwordHash -securitySalt');
@@ -249,7 +261,12 @@ const getPublicProfile = asyncHandler(async (req, res) => {
     const user = await User.findOne({ username: username.toLowerCase() })
         .populate({
             path: 'pinnedRepos',
-            select: 'name description language isPrivate _id owner defaultBranch',
+            select: 'name description language isPrivate _id owner defaultBranch starsCount forksCount',
+            populate: { path: 'owner', select: 'username' }
+        })
+        .populate({
+            path: 'starredRepos',
+            select: 'name description language isPrivate _id owner defaultBranch starsCount forksCount',
             populate: { path: 'owner', select: 'username' }
         })
         .select('-passwordHash -securitySalt');
@@ -345,6 +362,38 @@ const getUserContributions = asyncHandler(async (req, res) => {
     });
 });
 
+const toggleFollowUser = asyncHandler(async (req, res) => {
+    const { username } = req.params;
+    const currentUser = await User.findById(req.user._id);
+    const targetUser = await User.findOne({ username: username.toLowerCase() });
+
+    if (!targetUser) throw new ApiError(404, 'User not found');
+    if (currentUser._id.toString() === targetUser._id.toString()) {
+        throw new ApiError(400, 'You cannot follow yourself');
+    }
+
+    const isFollowing = currentUser.following.includes(targetUser._id);
+
+    if (isFollowing) {
+        // Unfollow
+        currentUser.following.pull(targetUser._id);
+        targetUser.followers.pull(currentUser._id);
+    } else {
+        // Follow
+        currentUser.following.push(targetUser._id);
+        targetUser.followers.push(currentUser._id);
+    }
+
+    await currentUser.save();
+    await targetUser.save();
+
+    res.status(200).json({
+        success: true,
+        message: isFollowing ? 'Unfollowed successfully' : 'Followed successfully',
+        data: { isFollowing: !isFollowing }
+    });
+});
+
 module.exports = {
     getMe,
     checkUsername,
@@ -356,4 +405,5 @@ module.exports = {
     getPublicProfile,
     updatePinnedRepos,
     getUserContributions,
+    toggleFollowUser,
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { 
   Folder, PanelLeftClose, Search, PanelLeft, 
   ChevronRight, Check, Copy, Star, Eye, GitFork
@@ -8,6 +8,11 @@ import { getFileIcon } from '../../utils/fileIcons';
 import EmptyRepoView from './EmptyRepoView';
 import SidebarNode from './SidebarNode';
 import ReadmeBox from './ReadmeBox';
+import Editor from '@monaco-editor/react';
+import { motion, AnimatePresence } from 'framer-motion';
+import apiClient from '../../lib/axios';
+import { Code2 } from 'lucide-react';
+import { jsonToast } from '../../lib/jsonToast';
 
 const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 
@@ -56,7 +61,7 @@ const extensionToLanguage = {
   '.ipynb': 'Jupyter Notebook'
 };
 
-const calculateLanguages = (tree) => {
+export const calculateLanguages = (tree) => {
   if (!tree) return [];
   const counts = {};
   let total = 0;
@@ -113,8 +118,48 @@ export default function CodeTab({
   activeFile,
   copiedFile,
   handleCloseFile,
-  handleEntryClick
+  handleEntryClick,
+  loadingFile,
+  loadingTree
 }) {
+  const navigate = useNavigate();
+  const [loadingCodespace, setLoadingCodespace] = React.useState(false);
+
+  const handleOpenRepoInCodespace = async () => {
+    try {
+      setLoadingCodespace(true);
+      await apiClient.post('/ide/load-codespace', { type: 'repo', owner, repo });
+      jsonToast.success('Codespace ready!');
+      navigate('/ide');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
+      setLoadingCodespace(false);
+    }
+  };
+
+  const handleOpenFileInCodespace = async () => {
+    try {
+      setLoadingCodespace(true);
+      await apiClient.post('/ide/load-codespace', { 
+        type: 'file', 
+        hash: activeFile.hash, 
+        filename: activeFile.name 
+      });
+      jsonToast.success('Codespace ready!');
+      navigate('/ide');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
+      setLoadingCodespace(false);
+    }
+  };
+
+  const isRepo100PercentPython = React.useMemo(() => {
+    const langs = calculateLanguages(rootTree);
+    return langs.length === 1 && langs[0].name === 'Python';
+  }, [rootTree]);
+
+  const isPythonFile = activeFile?.name?.endsWith('.py');
+
   if (isEmpty) {
     return <EmptyRepoView repoData={repoData} remoteUrl={remoteUrl} copyToClipboard={copyToClipboard} />;
   }
@@ -147,126 +192,161 @@ export default function CodeTab({
       )}
 
       {/* ── Sidebar + Main Panel ──────────────────────────── */}
-      <div className="flex gap-4 items-start">
+      <div className="flex items-start">
         {/* Sidebar Tree */}
-        {sidebarOpen && (
-          <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50/80 border-b border-gray-200">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 truncate">
-                <Folder size={14} className="text-[#54aeff] flex-shrink-0" />
-                <span className="truncate">Files</span>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 transition-colors cursor-pointer"
-                title="Collapse file tree"
-              >
-                <PanelLeftClose size={14} />
-              </button>
-            </div>
-
-            {/* Filter / Search Bar */}
-            <div className="p-2 border-b border-gray-100 bg-white">
-              <div className="relative flex items-center">
-                <Search size={12} className="absolute left-2 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={treeFilter}
-                  onChange={(e) => setTreeFilter(e.target.value)}
-                  placeholder="Filter files..."
-                  className="w-full pl-6 pr-6 py-1 bg-gray-50 border border-gray-200 rounded-md text-[11px] text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all"
-                />
-                {treeFilter && (
+        <AnimatePresence initial={false}>
+          {sidebarOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0, marginRight: 0 }}
+              animate={{ width: 256, opacity: 1, marginRight: 16 }}
+              exit={{ width: 0, opacity: 0, marginRight: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="flex-shrink-0 overflow-hidden"
+            >
+              <div className="w-64 bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2.5 bg-gray-50/80 border-b border-gray-200">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 truncate">
+                    <Folder size={14} className="text-[#54aeff] flex-shrink-0" />
+                    <span className="truncate">Files</span>
+                  </div>
                   <button
-                    onClick={() => setTreeFilter('')}
-                    className="absolute right-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    onClick={() => setSidebarOpen(false)}
+                    className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-200/50 transition-colors cursor-pointer"
+                    title="Collapse file tree"
                   >
-                    ✕
+                    <PanelLeftClose size={14} />
                   </button>
-                )}
-              </div>
-            </div>
-
-            {/* Tree View */}
-            <div className="p-1.5 max-h-[600px] overflow-y-auto space-y-0.5">
-              {rootTree && rootTree.length > 0 ? (
-                [...rootTree]
-                  .sort((a, b) => {
-                    if (a.object_type === b.object_type) return a.name.localeCompare(b.name);
-                    return a.object_type === 'tree' ? -1 : 1;
-                  })
-                  .map((entry) => (
-                    <SidebarNode
-                      key={entry.path || entry.name}
-                      entry={entry}
-                      owner={owner}
-                      repo={repo}
-                      branch={currentBranch}
-                      basePath=""
-                      depth={0}
-                      expandedPaths={expandedPaths}
-                      toggleFolder={toggleFolder}
-                      onFileClick={handleSidebarFileClick}
-                      onFolderClick={handleSidebarFolderClick}
-                      activeFilePath={activeFilePath}
-                      currentPath={currentPath}
-                      filterQuery={treeFilter}
-                    />
-                  ))
-              ) : (
-                <div className="py-6 text-center text-xs text-gray-400">
-                  No files in this branch
                 </div>
-              )}
-            </div>
-          </div>
-        )}
+
+                {/* Filter / Search Bar */}
+                <div className="p-2 border-b border-gray-100 bg-white">
+                  <div className="relative flex items-center">
+                    <Search size={12} className="absolute left-2 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={treeFilter}
+                      onChange={(e) => setTreeFilter(e.target.value)}
+                      placeholder="Filter files..."
+                      className="w-full pl-6 pr-6 py-1 bg-gray-50 border border-gray-200 rounded-md text-[11px] text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all"
+                    />
+                    {treeFilter && (
+                      <button
+                        onClick={() => setTreeFilter('')}
+                        className="absolute right-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tree View */}
+                <div className="p-1.5 max-h-[600px] overflow-y-auto space-y-0.5">
+                  {rootTree && rootTree.length > 0 ? (
+                    [...rootTree]
+                      .sort((a, b) => {
+                        if (a.object_type === b.object_type) return a.name.localeCompare(b.name);
+                        return a.object_type === 'tree' ? -1 : 1;
+                      })
+                      .map((entry) => (
+                        <SidebarNode
+                          key={entry.path || entry.name}
+                          entry={entry}
+                          owner={owner}
+                          repo={repo}
+                          branch={currentBranch}
+                          basePath=""
+                          depth={0}
+                          expandedPaths={expandedPaths}
+                          toggleFolder={toggleFolder}
+                          onFileClick={handleSidebarFileClick}
+                          onFolderClick={handleSidebarFolderClick}
+                          activeFilePath={activeFilePath}
+                          currentPath={currentPath}
+                          filterQuery={treeFilter}
+                        />
+                      ))
+                  ) : (
+                    <div className="py-6 text-center text-xs text-gray-400">
+                      No files in this branch
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Collapsed sidebar toggle */}
         {!sidebarOpen && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-xs"
-            title="Expand file tree"
-          >
-            <PanelLeft size={14} />
-          </button>
+          <div className="mr-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-xs"
+              title="Expand file tree"
+            >
+              <PanelLeft size={14} />
+            </button>
+          </div>
         )}
 
         {/* Main Content */}
-        <div className="flex-1 min-w-0 space-y-4">
+        <div className="flex-1 min-w-0 space-y-4 relative">
+          {(loadingFile || loadingTree) && (
+            <div className="absolute -top-3 left-0 right-0 h-[2px] bg-blue-100 overflow-hidden rounded-full z-10">
+              <motion.div
+                className="h-full bg-blue-500"
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </div>
+          )}
           {/* Breadcrumbs Navigation */}
-          <div className="flex items-center gap-1.5 text-xs text-gray-600 px-1">
-            <button
-              onClick={() => handleBreadcrumbClick(-1)}
-              className="font-bold text-gray-900 hover:underline cursor-pointer"
-            >
-              {repoData.name}
-            </button>
-            {pathSegments.map((segment, idx) => (
-              <React.Fragment key={idx}>
-                <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
-                <button
-                  onClick={() => handleBreadcrumbClick(idx)}
-                  className={`hover:underline cursor-pointer ${
-                    idx === pathSegments.length - 1 && !activeFile
-                      ? 'font-bold text-gray-900'
-                      : 'text-gray-600'
-                  }`}
-                >
-                  {segment}
-                </button>
-              </React.Fragment>
-            ))}
-            {activeFile && (
-              <>
-                <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
-                <span className="font-bold text-gray-900 flex items-center gap-1">
-                  {getFileIcon(activeFile.name)}
-                  {activeFile.name}
-                </span>
-              </>
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-600">
+              <button
+                onClick={() => handleBreadcrumbClick(-1)}
+                className="font-bold text-gray-900 hover:underline cursor-pointer"
+              >
+                {repoData.name}
+              </button>
+              {pathSegments.map((segment, idx) => (
+                <React.Fragment key={idx}>
+                  <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                  <button
+                    onClick={() => handleBreadcrumbClick(idx)}
+                    className={`hover:underline cursor-pointer ${
+                      idx === pathSegments.length - 1 && !activeFile
+                        ? 'font-bold text-gray-900'
+                        : 'text-gray-600'
+                    }`}
+                  >
+                    {segment}
+                  </button>
+                </React.Fragment>
+              ))}
+              {activeFile && (
+                <>
+                  <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                  <span className="font-bold text-gray-900 flex items-center gap-1">
+                    {getFileIcon(activeFile.name)}
+                    {activeFile.name}
+                  </span>
+                </>
+              )}
+            </div>
+            
+            {isRepo100PercentPython && !activeFile && (
+              <button
+                onClick={handleOpenRepoInCodespace}
+                disabled={loadingCodespace}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Code2 size={14} />
+                {loadingCodespace ? 'Preparing Codespace...' : 'Open in Codespace'}
+              </button>
             )}
           </div>
 
@@ -280,6 +360,16 @@ export default function CodeTab({
                   <span className="text-gray-400 font-normal">({activeFile.size} bytes)</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isPythonFile && (
+                    <button
+                      onClick={handleOpenFileInCodespace}
+                      disabled={loadingCodespace}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 border border-blue-600 rounded hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Code2 size={12} />
+                      {loadingCodespace ? 'Opening...' : 'Open in Codespace'}
+                    </button>
+                  )}
                   <button
                     onClick={() => copyToClipboard(activeFile.content, true)}
                     className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors cursor-pointer"
@@ -296,18 +386,65 @@ export default function CodeTab({
                 </div>
               </div>
 
-              {/* Code viewer with line numbers */}
-              <div className="p-4 overflow-x-auto font-mono text-[12px] leading-relaxed bg-[#f8f9fa] text-gray-900">
-                <pre className="table w-full">
-                  {activeFile.content.split('\n').map((line, i) => (
-                    <div key={i} className="table-row hover:bg-gray-100/70">
-                      <span className="table-cell pr-4 text-right select-none text-gray-400 text-[11px] w-10">
-                        {i + 1}
-                      </span>
-                      <span className="table-cell whitespace-pre">{line || ' '}</span>
-                    </div>
-                  ))}
-                </pre>
+              {/* Code viewer with syntax highlighting or Image Viewer */}
+              <div className="h-[65vh] min-h-[400px] w-full border-t border-gray-200 bg-[#fffffe] flex flex-col">
+                {(() => {
+                  const ext = activeFile.name.split('.').pop().toLowerCase();
+                  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
+                  
+                  if (isImage) {
+                    // Try to guess if content is already base64, otherwise try to convert or use raw
+                    const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
+                    let imgSrc = '';
+                    if (ext === 'svg') {
+                       imgSrc = `data:image/svg+xml;utf8,${encodeURIComponent(activeFile.content)}`;
+                    } else if (isLikelyBase64) {
+                       imgSrc = `data:image/${ext};base64,${activeFile.content}`;
+                    } else {
+                       // if it was saved as raw binary string, btoa might fail on invalid characters.
+                       try {
+                         imgSrc = `data:image/${ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
+                       } catch (e) {
+                         // fallback to raw in case it magically works or just let it break with a broken image icon
+                         imgSrc = `data:image/${ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
+                       }
+                    }
+
+                    return (
+                      <div className="flex-1 flex items-center justify-center p-8 bg-[url('https://raw.githubusercontent.com/tannerlinsley/react-table/master/media/checkered.png')] bg-repeat">
+                        <img 
+                          src={imgSrc} 
+                          alt={activeFile.name} 
+                          className="max-w-full max-h-[60vh] object-contain shadow-sm border border-gray-300 rounded bg-white"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.parentElement.innerHTML = '<div class="text-sm text-gray-500 bg-white p-4 rounded border border-red-200 text-center">Unable to load image.<br/><span class="text-xs text-gray-400 mt-2 block">The file might be corrupted or not pushed with correct binary encoding.</span></div>';
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Editor
+                      height="100%"
+                      path={activeFile.name}
+                      value={activeFile.content}
+                      theme="vs-light"
+                      options={{
+                        readOnly: true,
+                        domReadOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        lineNumbersMinChars: 4,
+                        padding: { top: 16, bottom: 16 },
+                        scrollbar: { alwaysConsumeMouseWheel: false },
+                      }}
+                    />
+                  );
+                })()}
               </div>
             </div>
           ) : (
@@ -406,7 +543,7 @@ export default function CodeTab({
                 <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">1</span>
               </h3>
               <div className="flex items-center gap-2 group">
-                <Link to={`/${repoData.owner?.username}`}>
+                <Link to={`/u/${repoData.owner?.username}`}>
                   <img 
                     src={repoData.owner?.profilePicture || defaultPfp} 
                     alt={repoData.owner?.username}
@@ -414,7 +551,7 @@ export default function CodeTab({
                   />
                 </Link>
                 <div className="flex flex-col">
-                  <Link to={`/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                  <Link to={`/u/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
                     {repoData.owner?.username}
                   </Link>
                   <span className="text-[11px] text-gray-500">{repoData.owner?.name}</span>
