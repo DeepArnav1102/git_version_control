@@ -119,7 +119,8 @@ export default function CodeTab({
   copiedFile,
   handleCloseFile,
   handleEntryClick,
-  loadingFile
+  loadingFile,
+  loadingTree
 }) {
   const navigate = useNavigate();
   const [loadingCodespace, setLoadingCodespace] = React.useState(false);
@@ -292,7 +293,7 @@ export default function CodeTab({
 
         {/* Main Content */}
         <div className="flex-1 min-w-0 space-y-4 relative">
-          {loadingFile && (
+          {(loadingFile || loadingTree) && (
             <div className="absolute -top-3 left-0 right-0 h-[2px] bg-blue-100 overflow-hidden rounded-full z-10">
               <motion.div
                 className="h-full bg-blue-500"
@@ -385,25 +386,65 @@ export default function CodeTab({
                 </div>
               </div>
 
-              {/* Code viewer with syntax highlighting */}
-              <div className="h-[65vh] min-h-[400px] w-full border-t border-gray-200 bg-[#fffffe]">
-                <Editor
-                  height="100%"
-                  path={activeFile.name}
-                  value={activeFile.content}
-                  theme="vs-light"
-                  options={{
-                    readOnly: true,
-                    domReadOnly: true,
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    scrollBeyondLastLine: false,
-                    wordWrap: 'on',
-                    lineNumbersMinChars: 4,
-                    padding: { top: 16, bottom: 16 },
-                    scrollbar: { alwaysConsumeMouseWheel: false },
-                  }}
-                />
+              {/* Code viewer with syntax highlighting or Image Viewer */}
+              <div className="h-[65vh] min-h-[400px] w-full border-t border-gray-200 bg-[#fffffe] flex flex-col">
+                {(() => {
+                  const ext = activeFile.name.split('.').pop().toLowerCase();
+                  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
+                  
+                  if (isImage) {
+                    // Try to guess if content is already base64, otherwise try to convert or use raw
+                    const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
+                    let imgSrc = '';
+                    if (ext === 'svg') {
+                       imgSrc = `data:image/svg+xml;utf8,${encodeURIComponent(activeFile.content)}`;
+                    } else if (isLikelyBase64) {
+                       imgSrc = `data:image/${ext};base64,${activeFile.content}`;
+                    } else {
+                       // if it was saved as raw binary string, btoa might fail on invalid characters.
+                       try {
+                         imgSrc = `data:image/${ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
+                       } catch (e) {
+                         // fallback to raw in case it magically works or just let it break with a broken image icon
+                         imgSrc = `data:image/${ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
+                       }
+                    }
+
+                    return (
+                      <div className="flex-1 flex items-center justify-center p-8 bg-[url('https://raw.githubusercontent.com/tannerlinsley/react-table/master/media/checkered.png')] bg-repeat">
+                        <img 
+                          src={imgSrc} 
+                          alt={activeFile.name} 
+                          className="max-w-full max-h-[60vh] object-contain shadow-sm border border-gray-300 rounded bg-white"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.parentElement.innerHTML = '<div class="text-sm text-gray-500 bg-white p-4 rounded border border-red-200 text-center">Unable to load image.<br/><span class="text-xs text-gray-400 mt-2 block">The file might be corrupted or not pushed with correct binary encoding.</span></div>';
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Editor
+                      height="100%"
+                      path={activeFile.name}
+                      value={activeFile.content}
+                      theme="vs-light"
+                      options={{
+                        readOnly: true,
+                        domReadOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        lineNumbersMinChars: 4,
+                        padding: { top: 16, bottom: 16 },
+                        scrollbar: { alwaysConsumeMouseWheel: false },
+                      }}
+                    />
+                  );
+                })()}
               </div>
             </div>
           ) : (
