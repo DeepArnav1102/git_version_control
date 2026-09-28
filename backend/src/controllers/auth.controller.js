@@ -18,23 +18,54 @@ const setRefreshTokenCookie = (res, token) => {
     });
 };
 
+
+// Helper to keep only the most recent 5 active refresh tokens to prevent DB bloat
+const cleanupOldSessions = async (userId) => {
+    const activeTokens = await Token.find({ userId, type: 'REFRESH_TOKEN', isRevoked: false })
+        .sort({ createdAt: -1 }); // Newest first
+
+    if (activeTokens.length >= 5) {
+        // Keep the 4 most recent ones (plus the 1 we are about to create = 5)
+        const tokensToRevoke = activeTokens.slice(4).map(t => t._id);
+        if (tokensToRevoke.length > 0) {
+            await Token.updateMany(
+                { _id: { $in: tokensToRevoke } },
+                { $set: { isRevoked: true, expiresAt: new Date() } } // TTL index will delete them immediately
+            );
+        }
+    }
+};
+
 // Helper to set HttpOnly Secure cookie for Access Token
 const setAccessTokenCookie = (res, token) => {
+    // We match the cookie maxAge to the JWT expiration (default 6h)
+    // If JWT_EXPIRES_IN is '6h', it is 6 * 60 * 60 * 1000 ms.
+    let maxAge = 6 * 60 * 60 * 1000; 
+    if (process.env.JWT_EXPIRES_IN) {
+        const match = process.env.JWT_EXPIRES_IN.match(/^(\d+)(h|m|d)$/);
+        if (match) {
+            const val = parseInt(match[1]);
+            const unit = match[2];
+            if (unit === 'm') maxAge = val * 60 * 1000;
+            if (unit === 'h') maxAge = val * 60 * 60 * 1000;
+            if (unit === 'd') maxAge = val * 24 * 60 * 60 * 1000;
+        }
+    }
     res.cookie('accessToken', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'Strict',
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        maxAge,
     });
 };
 
 const register = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     const user = await registerLocalUser(email, password);
-    
+
     // Dispatch Registration OTP
     await generateAndSendOtp(user, 'REGISTRATION_VERIFY');
-    
+
     res.status(201).json({
         success: true,
         message: 'User created. Please check your email for the verification code.',
@@ -45,23 +76,18 @@ const register = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     const user = await loginLocalUser(email, password);
-    
+
     if (!user.isEmailVerified) {
         throw new ApiError(403, 'Email not verified. Please verify your email first.');
     }
 
-    // Revoke all existing refresh tokens for this user so that MongoDB can clean them up.
-    // This ensures only the newly created refresh token is active.
-    await Token.updateMany(
-        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
-        { $set: { isRevoked: true, expiresAt: new Date() } }
-    );
+    await cleanupOldSessions(user._id);
 
     const { accessToken, refreshToken } = await generateAuthTokens(user);
-    
+
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    
+
     res.status(200).json({
         success: true,
         message: 'Login successful',
@@ -81,11 +107,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
     user.isEmailVerified = true;
     await user.save({ validateModifiedOnly: true });
 
-    // Revoke all existing refresh tokens for this user
-    await Token.updateMany(
-        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
-        { $set: { isRevoked: true, expiresAt: new Date() } }
-    );
+    await cleanupOldSessions(user._id);
 
     // Issue tokens after successful verification
     const { accessToken, refreshToken } = await generateAuthTokens(user);
@@ -102,7 +124,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
 const resendVerification = asyncHandler(async (req, res) => {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    
+
     if (!user) throw new ApiError(404, 'User not found');
     if (user.isEmailVerified) throw new ApiError(400, 'Email is already verified');
 
@@ -117,7 +139,7 @@ const resendVerification = asyncHandler(async (req, res) => {
 const forgotPassword = asyncHandler(async (req, res) => {
     const { email } = req.body;
     const user = await User.findOne({ email });
-    
+
     // Don't reveal if user exists or not for security, unless it's a social login error
     if (user) {
         if (user.googleId && !user.passwordHash) {
@@ -160,18 +182,14 @@ const googleCallback = asyncHandler(async (req, res) => {
     }
 
     const user = await handleGoogleOAuth(code, redirectUri);
-    
-    // Revoke all existing refresh tokens for this user
-    await Token.updateMany(
-        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
-        { $set: { isRevoked: true, expiresAt: new Date() } }
-    );
+
+    await cleanupOldSessions(user._id);
 
     const { accessToken, refreshToken } = await generateAuthTokens(user);
-    
+
     setRefreshTokenCookie(res, refreshToken);
     setAccessTokenCookie(res, accessToken);
-    
+
     res.status(200).json({
         success: true,
         message: 'Google login successful',
@@ -189,7 +207,7 @@ const refresh = asyncHandler(async (req, res) => {
 
     if (!tokenDoc) throw new ApiError(401, 'Invalid refresh token');
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
-    
+
     // If it's already revoked but hasn't expired yet (within the 30s grace period),
     // we allow the refresh to proceed to prevent race conditions with multiple tabs.
     // However, if the user was explicitly logged out or token family revoked, 
@@ -226,11 +244,11 @@ const cliLogin = asyncHandler(async (req, res) => {
 
     // Verify PAT
     const tokenHash = crypto.createHash('sha256').update(pat).digest('hex');
-    const patDoc = await Token.findOne({ 
-        tokenHash, 
-        userId: user._id, 
-        type: 'PERSONAL_ACCESS_TOKEN', 
-        isRevoked: false 
+    const patDoc = await Token.findOne({
+        tokenHash,
+        userId: user._id,
+        type: 'PERSONAL_ACCESS_TOKEN',
+        isRevoked: false
     });
 
     if (!patDoc) throw new ApiError(401, 'Invalid PAT or credentials');

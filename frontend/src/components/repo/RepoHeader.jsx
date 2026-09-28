@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy, RefreshCw } from 'lucide-react';
+import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function RepoHeader({
   repoData,
@@ -40,11 +40,39 @@ export default function RepoHeader({
           </span>
         </div>
         {repoData.isFork && repoData.parentRepo && (
-          <div className="text-xs text-gray-500 mt-0.5 mb-1">
-            forked from{' '}
-            <Link to={`/${repoData.parentRepo.owner.username}/${repoData.parentRepo.name}`} className="hover:text-blue-600 hover:underline">
-              {repoData.parentRepo.owner.username}/{repoData.parentRepo.name}
-            </Link>
+          <div className="text-xs text-gray-500 mt-0.5 mb-1 flex items-center gap-2 flex-wrap">
+            <span>
+              forked from{' '}
+              <Link to={`/${repoData.parentRepo.owner.username}/${repoData.parentRepo.name}`} className="hover:text-blue-600 hover:underline">
+                {repoData.parentRepo.owner.username}/{repoData.parentRepo.name}
+              </Link>
+            </span>
+            {(repoData.ahead > 0 || repoData.behind > 0) && (
+              <div className="flex items-center gap-1.5 text-[11px] bg-gray-50 px-2 py-1 rounded-full border border-gray-200 text-gray-600">
+                <span>This branch is</span>
+                {repoData.ahead > 0 && (
+                  <span className="flex items-center gap-0.5 font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-300">
+                    <ArrowUp size={11} strokeWidth={3} />
+                    {repoData.ahead} ahead
+                  </span>
+                )}
+                {repoData.behind > 0 && (
+                  <span className="flex items-center gap-0.5 font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-300">
+                    <ArrowDown size={11} strokeWidth={3} />
+                    {repoData.behind} behind
+                  </span>
+                )}
+                <span>of {repoData.parentRepo.owner.username}:{repoData.parentRepo.defaultBranch || 'main'}</span>
+              </div>
+            )}
+            {repoData.ahead === 0 && repoData.behind === 0 && (
+              <div className="flex items-center gap-1.5 text-[11px] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-300 text-emerald-700">
+                <Check size={12} strokeWidth={3} />
+                <span>
+                  This branch is up to date with <span className="font-semibold">{repoData.parentRepo.owner.username}:{repoData.parentRepo.defaultBranch || 'main'}</span>
+                </span>
+              </div>
+            )}
           </div>
         )}
         {repoData.description && (
