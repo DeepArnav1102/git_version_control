@@ -1,5 +1,6 @@
 import React from 'react';
-import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy, RefreshCw } from 'lucide-react';
 
 export default function RepoHeader({
   repoData,
@@ -16,7 +17,10 @@ export default function RepoHeader({
   isPinned,
   handlePinToggle,
   isStarred,
-  handleToggleStar
+  handleToggleStar,
+  handleFork,
+  handleSync,
+  currentUser
 }) {
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
@@ -35,6 +39,14 @@ export default function RepoHeader({
             )}
           </span>
         </div>
+        {repoData.isFork && repoData.parentRepo && (
+          <div className="text-xs text-gray-500 mt-0.5 mb-1">
+            forked from{' '}
+            <Link to={`/${repoData.parentRepo.owner.username}/${repoData.parentRepo.name}`} className="hover:text-blue-600 hover:underline">
+              {repoData.parentRepo.owner.username}/{repoData.parentRepo.name}
+            </Link>
+          </div>
+        )}
         {repoData.description && (
           <p className="text-sm text-gray-600 mt-1">{repoData.description}</p>
         )}
@@ -57,6 +69,17 @@ export default function RepoHeader({
               <span>{isPinned ? 'Unpin' : 'Pin'}</span>
             </button>
           )}
+          
+          {repoData.isFork && currentUser?._id === repoData.owner?._id && (
+            <button 
+              onClick={handleSync}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-colors shadow-sm cursor-pointer border text-gray-700 bg-white border-gray-300 hover:bg-gray-50"
+            >
+              <RefreshCw size={14} className="text-gray-500" />
+              <span>Sync fork</span>
+            </button>
+          )}
+
           <div className="flex rounded-md shadow-sm">
             <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
               <Eye size={14} className="text-gray-500" />
@@ -68,8 +91,14 @@ export default function RepoHeader({
             </button>
           </div>
           <div className="flex rounded-md shadow-sm">
-            <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
-              <GitFork size={14} className="text-gray-500" />
+            <button 
+              onClick={handleFork}
+              disabled={currentUser?._id === repoData.owner?._id}
+              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-l-md transition-colors cursor-pointer border-y border-l ${
+                currentUser?._id === repoData.owner?._id ? 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <GitFork size={14} className={currentUser?._id === repoData.owner?._id ? "text-gray-400" : "text-gray-500"} />
               <span>Fork</span>
               <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.forksCount || 0}</span>
             </button>

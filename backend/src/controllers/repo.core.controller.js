@@ -139,6 +139,13 @@ const getRepoDetails = asyncHandler(async (req, res) => {
     }
 
     await repoDoc.populate('owner', 'username email name profilePicture');
+    await repoDoc.populate({
+        path: 'parentRepo',
+        populate: {
+            path: 'owner',
+            select: 'username'
+        }
+    });
 
     res.status(200).json({
         success: true,
@@ -225,4 +232,127 @@ const toggleStarRepo = asyncHandler(async (req, res) => {
     });
 });
 
-module.exports = { createRepo, updateRepo, getUserRepos, getReposByUsername, getRepoDetails, requestDeleteOtp, deleteRepo, toggleStarRepo };
+const forkRepo = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const sourceRepo = await resolveRepo(owner, repo, req.user);
+    
+    if (!sourceRepo) {
+        throw new ApiError(404, 'Source repository not found');
+    }
+
+    if (sourceRepo.owner.toString() === req.user._id.toString()) {
+        throw new ApiError(400, 'You cannot fork your own repository');
+    }
+
+    const existingFork = await Repository.findOne({
+        owner: req.user._id,
+        name: sourceRepo.name
+    });
+
+    if (existingFork) {
+        throw new ApiError(400, `You already have a repository named '${sourceRepo.name}'`);
+    }
+
+    const forkedRepo = await Repository.create({
+        name: sourceRepo.name,
+        owner: req.user._id,
+        description: sourceRepo.description,
+        isPrivate: sourceRepo.isPrivate,
+        defaultBranch: sourceRepo.defaultBranch,
+        branches: sourceRepo.branches.map(b => ({
+            name: b.name,
+            commitHash: b.commitHash,
+            updatedAt: Date.now()
+        })),
+        latestCommit: sourceRepo.latestCommit,
+        isFork: true,
+        parentRepo: sourceRepo._id,
+        rootRepo: sourceRepo.rootRepo || sourceRepo._id
+    });
+    
+    // update source repo forks count
+    sourceRepo.forksCount = (sourceRepo.forksCount || 0) + 1;
+    await sourceRepo.save();
+
+    // Copy all GitObjects from source to the new fork
+    const sourceObjects = await GitObject.find({ repositoryId: sourceRepo._id });
+    if (sourceObjects.length > 0) {
+        const newObjects = sourceObjects.map(obj => ({
+            repositoryId: forkedRepo._id,
+            hash: obj.hash,
+            type: obj.type,
+            data: obj.data,
+            pushedBy: obj.pushedBy
+        }));
+        await GitObject.insertMany(newObjects);
+    }
+
+    res.status(201).json({
+        success: true,
+        message: 'Repository forked successfully',
+        data: forkedRepo
+    });
+});
+
+const syncRepo = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const forkedRepo = await resolveRepo(owner, repo, req.user);
+    
+    if (!forkedRepo) throw new ApiError(404, 'Repository not found');
+    if (!forkedRepo.isFork || !forkedRepo.parentRepo) {
+        throw new ApiError(400, 'This repository is not a fork');
+    }
+    
+    if (forkedRepo.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to sync this repository');
+    }
+
+    const parentRepo = await Repository.findById(forkedRepo.parentRepo);
+    if (!parentRepo) {
+        throw new ApiError(404, 'Parent repository no longer exists');
+    }
+
+    // Fast-forward sync: copy missing objects from parent to fork
+    const parentObjects = await GitObject.find({ repositoryId: parentRepo._id });
+    const forkObjects = await GitObject.find({ repositoryId: forkedRepo._id }, { hash: 1 });
+    const forkHashes = new Set(forkObjects.map(o => o.hash));
+    
+    const objectsToCopy = parentObjects.filter(o => !forkHashes.has(o.hash)).map(o => ({
+        repositoryId: forkedRepo._id,
+        hash: o.hash,
+        type: o.type,
+        data: o.data,
+        pushedBy: o.pushedBy
+    }));
+
+    if (objectsToCopy.length > 0) {
+        await GitObject.insertMany(objectsToCopy);
+    }
+
+    // Update branches
+    const parentDefaultBranch = parentRepo.branches.find(b => b.name === parentRepo.defaultBranch);
+    if (parentDefaultBranch) {
+        const forkBranchIndex = forkedRepo.branches.findIndex(b => b.name === forkedRepo.defaultBranch);
+        if (forkBranchIndex !== -1) {
+            forkedRepo.branches[forkBranchIndex].commitHash = parentDefaultBranch.commitHash;
+            forkedRepo.branches[forkBranchIndex].updatedAt = Date.now();
+        } else {
+            forkedRepo.branches.push({
+                name: parentRepo.defaultBranch,
+                commitHash: parentDefaultBranch.commitHash,
+                updatedAt: Date.now()
+            });
+            forkedRepo.defaultBranch = parentRepo.defaultBranch;
+        }
+        forkedRepo.latestCommit = parentRepo.latestCommit;
+        await forkedRepo.save();
+    }
+
+    res.status(200).json({
+        success: true,
+        message: 'Repository synced successfully',
+        data: forkedRepo
+    });
+});
+
+module.exports = { createRepo, updateRepo, getUserRepos, getReposByUsername, getRepoDetails, requestDeleteOtp, deleteRepo, toggleStarRepo, forkRepo, syncRepo };

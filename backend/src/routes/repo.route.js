@@ -15,6 +15,8 @@ const {
     requestDeleteOtp,
     deleteRepo,
     toggleStarRepo,
+    forkRepo,
+    syncRepo,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -95,6 +97,24 @@ router.post('/:owner/:repo/request-delete-otp', otpLimiter, protect, requestDele
  *     tags: [Repositories]
  */
 router.delete('/:owner/:repo', protect, deleteRepo);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/fork:
+ *   post:
+ *     summary: Fork a repository
+ *     tags: [Repositories]
+ */
+router.post('/:owner/:repo/fork', protect, forkRepo);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/sync:
+ *   post:
+ *     summary: Sync a forked repository with its upstream
+ *     tags: [Repositories]
+ */
+router.post('/:owner/:repo/sync', protect, syncRepo);
 
 /**
  * @swagger
