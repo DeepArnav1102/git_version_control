@@ -220,6 +220,30 @@ export default function RepoDetail() {
     }
   };
 
+  const handleFork = async () => {
+    if (!user) {
+      jsonToast.error("Please login to fork this repository");
+      return;
+    }
+    try {
+      const res = await apiClient.post(`/repos/${owner}/${repo}/fork`);
+      jsonToast.success("Repository forked successfully!");
+      navigate(`/${user.username}/${repo}`);
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || "Failed to fork repository");
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      await apiClient.post(`/repos/${owner}/${repo}/sync`);
+      jsonToast.success("Repository synced with upstream!");
+      fetchRepo();
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || "Sync failed.");
+    }
+  };
+
   // Helper to toggle folder expand/collapse in sidebar
   const toggleFolder = useCallback((folderPath) => {
     setExpandedPaths((prev) => {
@@ -490,6 +514,9 @@ export default function RepoDetail() {
         handlePinToggle={handlePinToggle}
         isStarred={isStarred}
         handleToggleStar={handleToggleStar}
+        handleFork={handleFork}
+        handleSync={handleSync}
+        currentUser={user}
       />
 
       {/* Horizontal Tabs */}

@@ -66,6 +66,20 @@ const repositorySchema = new mongoose.Schema(
                 default: Date.now,
             },
         },
+        isFork: {
+            type: Boolean,
+            default: false
+        },
+        parentRepo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Repository',
+            default: null
+        },
+        rootRepo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Repository',
+            default: null
+        }
     },
     { timestamps: true }
 );
