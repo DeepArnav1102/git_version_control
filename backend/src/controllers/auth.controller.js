@@ -50,14 +50,12 @@ const login = asyncHandler(async (req, res) => {
         throw new ApiError(403, 'Email not verified. Please verify your email first.');
     }
 
-    // Clean up any existing refresh token from this device to prevent DB bloat.
-    // If the browser already sends a refreshToken cookie, it means they are re-logging in 
-    // from the same device, so we should delete their old token instead of stacking them.
-    const { refreshToken: existingToken } = req.cookies;
-    if (existingToken) {
-        const tokenHash = crypto.createHash('sha256').update(existingToken).digest('hex');
-        await Token.deleteOne({ tokenHash, type: 'REFRESH_TOKEN' });
-    }
+    // Revoke all existing refresh tokens for this user so that MongoDB can clean them up.
+    // This ensures only the newly created refresh token is active.
+    await Token.updateMany(
+        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
+        { $set: { isRevoked: true, expiresAt: new Date() } }
+    );
 
     const { accessToken, refreshToken } = await generateAuthTokens(user);
     
@@ -82,6 +80,12 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
     user.isEmailVerified = true;
     await user.save({ validateModifiedOnly: true });
+
+    // Revoke all existing refresh tokens for this user
+    await Token.updateMany(
+        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
+        { $set: { isRevoked: true, expiresAt: new Date() } }
+    );
 
     // Issue tokens after successful verification
     const { accessToken, refreshToken } = await generateAuthTokens(user);
@@ -156,6 +160,13 @@ const googleCallback = asyncHandler(async (req, res) => {
     }
 
     const user = await handleGoogleOAuth(code, redirectUri);
+    
+    // Revoke all existing refresh tokens for this user
+    await Token.updateMany(
+        { userId: user._id, type: 'REFRESH_TOKEN', isRevoked: false },
+        { $set: { isRevoked: true, expiresAt: new Date() } }
+    );
+
     const { accessToken, refreshToken } = await generateAuthTokens(user);
     
     setRefreshTokenCookie(res, refreshToken);
@@ -174,17 +185,26 @@ const refresh = asyncHandler(async (req, res) => {
 
     // Hash the token from cookie to match DB
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    const tokenDoc = await Token.findOne({ tokenHash, type: 'REFRESH_TOKEN', isRevoked: false });
+    const tokenDoc = await Token.findOne({ tokenHash, type: 'REFRESH_TOKEN' });
 
-    if (!tokenDoc) throw new ApiError(401, 'Invalid or revoked refresh token');
+    if (!tokenDoc) throw new ApiError(401, 'Invalid refresh token');
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
+    
+    // If it's already revoked but hasn't expired yet (within the 30s grace period),
+    // we allow the refresh to proceed to prevent race conditions with multiple tabs.
+    // However, if the user was explicitly logged out or token family revoked, 
+    // we could add additional checks here.
+    if (tokenDoc.isRevoked && tokenDoc.expiresAt < new Date()) {
+        throw new ApiError(401, 'Refresh token has already been used/revoked');
+    }
 
     const user = await User.findById(tokenDoc.userId);
     if (!user) throw new ApiError(401, 'User no longer exists');
 
     // Instead of deleting the old refresh token immediately (which causes race conditions
-    // with multiple tabs), we give it a short 30-second grace period by updating expiresAt.
-    // MongoDB's TTL index will clean it up automatically.
+    // with multiple tabs), we mark it as revoked and give it a short 30-second grace period 
+    // by updating expiresAt. MongoDB's TTL index will clean it up automatically.
+    tokenDoc.isRevoked = true;
     tokenDoc.expiresAt = new Date(Date.now() + 30 * 1000); // 30 seconds
     await tokenDoc.save();
 

@@ -136,6 +136,13 @@ userSchema.methods.isPasswordCorrect = async function (password) {
 userSchema.methods.invalidateAllSessions = async function () {
     this.securitySalt = crypto.randomBytes(16).toString('hex');
     await this.save({ validateModifiedOnly: true });
+    
+    // We also must revoke all refresh tokens, otherwise they can just be used to get new access tokens!
+    const Token = mongoose.model('Token');
+    await Token.updateMany(
+        { userId: this._id, type: 'REFRESH_TOKEN', isRevoked: false },
+        { $set: { isRevoked: true, expiresAt: new Date() } }
+    );
 };
 
 const User = mongoose.model('User', userSchema);
