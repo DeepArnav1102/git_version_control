@@ -10,6 +10,79 @@ const getWorkspaceId = (req) => {
     return 'default_workspace';
 };
 
+const GitObject = require('../models/GitObject.model');
+const { resolveRepo, buildRecursiveTree } = require('../utils/repoHelpers');
+
+/**
+ * @swagger
+ * /api/v1/ide/load-codespace:
+ *   post:
+ *     summary: Loads a specific git file or repository into the user's IDE sandbox
+ */
+router.post('/load-codespace', async (req, res) => {
+    try {
+        const workspaceId = getWorkspaceId(req);
+        const { type, owner, repo, hash, filename } = req.body;
+        
+        await FileService.clearWorkspace(workspaceId);
+
+        if (type === 'file') {
+            if (!hash || !filename) return res.status(400).json({ error: 'hash and filename are required for file type' });
+            const blobObj = await GitObject.findOne({ hash, type: 'blob' });
+            if (!blobObj) return res.status(404).json({ error: 'Blob not found' });
+            
+            await FileService.create(workspaceId, filename, 'file');
+            await FileService.updateFile(workspaceId, filename, blobObj.data);
+            
+            return res.json({ success: true });
+        } else if (type === 'repo') {
+            if (!owner || !repo) return res.status(400).json({ error: 'owner and repo are required for repo type' });
+            
+            const repoDoc = await resolveRepo(owner, repo, req.user); // req.user might be undefined here depending on auth middleware, but we can pass null
+            if (!repoDoc) return res.status(404).json({ error: 'Repository not found' });
+            
+            const defaultBranch = repoDoc.defaultBranch || 'main';
+            const branch = repoDoc.branches.find(b => b.name === defaultBranch);
+            if (!branch) return res.status(404).json({ error: 'Default branch not found' });
+            
+            const commitObj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: branch.commitHash, type: 'commit' });
+            if (!commitObj) return res.status(404).json({ error: 'Commit not found' });
+            
+            const commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
+            const treeHash = commitData.tree;
+            
+            const fileTree = await buildRecursiveTree(treeHash, repoDoc._id, '');
+            
+            // Helper to recursively write tree
+            const writeTreeToSandbox = async (nodes, currentPath = '') => {
+                for (const node of nodes) {
+                    const nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+                    if (node.object_type === 'tree') {
+                        await FileService.create(workspaceId, nodePath, 'folder');
+                        if (node.children) {
+                            await writeTreeToSandbox(node.children, nodePath);
+                        }
+                    } else if (node.object_type === 'blob') {
+                        const blobObj = await GitObject.findOne({ hash: node.object_hash, type: 'blob' });
+                        if (blobObj) {
+                            await FileService.create(workspaceId, nodePath, 'file');
+                            await FileService.updateFile(workspaceId, nodePath, blobObj.data);
+                        }
+                    }
+                }
+            };
+            
+            await writeTreeToSandbox(fileTree);
+            return res.json({ success: true });
+        } else {
+            return res.status(400).json({ error: 'Invalid type' });
+        }
+    } catch (error) {
+        console.error('Error loading codespace:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 /**
  * @swagger
  * /api/v1/ide/files:
