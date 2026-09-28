@@ -69,6 +69,7 @@ export default function RepoDetail() {
   const [activeTab, setActiveTab] = useState(tabParam || 'code');
   const [loading, setLoading] = useState(true);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [loadingTree, setLoadingTree] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [deleteOtp, setDeleteOtp] = useState('');
@@ -188,20 +189,23 @@ export default function RepoDetail() {
     }
   };
 
-  const handleRequestDeleteOtp = async () => {
-    if (!window.confirm(`Are you absolutely sure you want to delete ${owner}/${repo}? This action cannot be undone.`)) {
-      return;
-    }
-    try {
-      setDeleting(true);
-      await apiClient.post(`/repos/${owner}/${repo}/request-delete-otp`);
-      jsonToast.success('Security code sent to your email');
-      setOtpSent(true);
-    } catch (err) {
-      jsonToast.error(err?.response?.data?.message || 'Failed to request OTP');
-    } finally {
-      setDeleting(false);
-    }
+  const handleRequestDeleteOtp = () => {
+    jsonToast.confirm(
+      `Are you absolutely sure you want to delete ${owner}/${repo}? This action cannot be undone.`,
+      async () => {
+        try {
+          setDeleting(true);
+          await apiClient.post(`/repos/${owner}/${repo}/request-delete-otp`);
+          jsonToast.success('Security code sent to your email');
+          setOtpSent(true);
+        } catch (err) {
+          jsonToast.error(err?.response?.data?.message || 'Failed to request OTP');
+        } finally {
+          setDeleting(false);
+        }
+      },
+      'Okay'
+    );
   };
 
   const handleDeleteRepo = async () => {
@@ -291,6 +295,7 @@ export default function RepoDetail() {
   // 2. Fetch File Tree
   const fetchTree = useCallback(async (branch, path = '') => {
     try {
+      setLoadingTree(true);
       const res = await apiClient.get(`/repos/${owner}/${repo}/tree/${branch}`, {
         params: { path },
       });
@@ -299,6 +304,8 @@ export default function RepoDetail() {
       setActiveFile(null);
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Failed to load file tree');
+    } finally {
+      setLoadingTree(false);
     }
   }, [owner, repo]);
 
@@ -550,7 +557,7 @@ export default function RepoDetail() {
         )}
       </div>
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         {activeTab === 'code' && (
           <motion.div
             key="tab-code"
@@ -587,6 +594,7 @@ export default function RepoDetail() {
             handleCloseFile={handleCloseFile}
             handleEntryClick={handleEntryClick}
             loadingFile={loadingFile}
+            loadingTree={loadingTree}
           />
         </motion.div>
       )}
@@ -622,23 +630,39 @@ export default function RepoDetail() {
         )}
 
         {activeTab === 'commits' && (
-          <CommitsTab commits={commits} copyToClipboard={copyToClipboard} />
+          <motion.div
+            key="tab-commits"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+          >
+            <CommitsTab commits={commits} copyToClipboard={copyToClipboard} />
+          </motion.div>
         )}
 
         {activeTab === 'settings' && isOwner && (
-          <SettingsTab
-            repoSettings={repoSettings}
-            setRepoSettings={setRepoSettings}
-            updatingSettings={updatingSettings}
-            handleUpdateRepo={handleUpdateRepo}
-            repoData={repoData}
-            otpSent={otpSent}
-            handleRequestDeleteOtp={handleRequestDeleteOtp}
-            deleting={deleting}
-            deleteOtp={deleteOtp}
-            setDeleteOtp={setDeleteOtp}
-            handleDeleteRepo={handleDeleteRepo}
-          />
+          <motion.div
+            key="tab-settings"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.2 }}
+          >
+            <SettingsTab
+              repoSettings={repoSettings}
+              setRepoSettings={setRepoSettings}
+              updatingSettings={updatingSettings}
+              handleUpdateRepo={handleUpdateRepo}
+              repoData={repoData}
+              otpSent={otpSent}
+              handleRequestDeleteOtp={handleRequestDeleteOtp}
+              deleting={deleting}
+              deleteOtp={deleteOtp}
+              setDeleteOtp={setDeleteOtp}
+              handleDeleteRepo={handleDeleteRepo}
+            />
+          </motion.div>
         )}
       </AnimatePresence>
     </motion.div>

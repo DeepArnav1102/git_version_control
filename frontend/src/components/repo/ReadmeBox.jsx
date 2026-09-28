@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BookMarked } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import 'github-markdown-css/github-markdown-light.css';
 import apiClient from '../../lib/axios';
 
 // Subcomponent to load and render README.md preview
@@ -28,11 +32,18 @@ export default function ReadmeBox({ owner, repo, entry }) {
         <BookMarked size={14} />
         README.md
       </div>
-      <div className="p-6 text-sm text-gray-800 leading-relaxed font-sans whitespace-pre-wrap">
+      <div className="p-8 markdown-body" style={{ minHeight: '100px' }}>
         {loading ? (
           <span className="text-xs text-gray-400">Loading README...</span>
+        ) : content ? (
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm]} 
+            rehypePlugins={[rehypeRaw]}
+          >
+            {content}
+          </ReactMarkdown>
         ) : (
-          content || <span className="text-xs text-gray-400">Empty README</span>
+          <span className="text-xs text-gray-400">Empty README</span>
         )}
       </div>
     </div>

@@ -253,15 +253,30 @@ const deleteRepo = asyncHandler(async (req, res) => {
 
     await verifyOtp(req.user._id, otp, 'REPO_DELETE');
 
-    // Delete all GitObjects associated with this repository
-    await GitObject.deleteMany({ repositoryId: repoDoc._id });
+    // Recursive function to get all fork IDs
+    const getAllForkIds = async (repoId) => {
+        const forks = await Repository.find({ parentRepo: repoId }, '_id');
+        let allIds = [];
+        for (const fork of forks) {
+            allIds.push(fork._id);
+            const childIds = await getAllForkIds(fork._id);
+            allIds = allIds.concat(childIds);
+        }
+        return allIds;
+    };
+
+    const forkIds = await getAllForkIds(repoDoc._id);
+    const allRepoIdsToDelete = [repoDoc._id, ...forkIds];
+
+    // Delete all GitObjects associated with this repository and its forks
+    await GitObject.deleteMany({ repositoryId: { $in: allRepoIdsToDelete } });
     
-    // Delete the repository document itself
-    await Repository.findByIdAndDelete(repoDoc._id);
+    // Delete the repository documents
+    await Repository.deleteMany({ _id: { $in: allRepoIdsToDelete } });
 
     res.status(200).json({
         success: true,
-        message: 'Repository deleted successfully'
+        message: 'Repository and its forks deleted successfully'
     });
 });
 
@@ -415,4 +430,15 @@ const syncRepo = asyncHandler(async (req, res) => {
     });
 });
 
-module.exports = { createRepo, updateRepo, getUserRepos, getReposByUsername, getRepoDetails, requestDeleteOtp, deleteRepo, toggleStarRepo, forkRepo, syncRepo };
+module.exports = { 
+    createRepo, 
+    updateRepo, 
+    getUserRepos, 
+    getReposByUsername, 
+    getRepoDetails, 
+    requestDeleteOtp, 
+    deleteRepo, 
+    toggleStarRepo, 
+    forkRepo, 
+    syncRepo 
+};
