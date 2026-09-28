@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { 
   Folder, PanelLeftClose, Search, PanelLeft, 
   ChevronRight, Check, Copy, Star, Eye, GitFork
@@ -10,6 +10,9 @@ import SidebarNode from './SidebarNode';
 import ReadmeBox from './ReadmeBox';
 import Editor from '@monaco-editor/react';
 import { motion, AnimatePresence } from 'framer-motion';
+import apiClient from '../../lib/axios';
+import { Code2 } from 'lucide-react';
+import { jsonToast } from '../../lib/jsonToast';
 
 const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 
@@ -58,7 +61,7 @@ const extensionToLanguage = {
   '.ipynb': 'Jupyter Notebook'
 };
 
-const calculateLanguages = (tree) => {
+export const calculateLanguages = (tree) => {
   if (!tree) return [];
   const counts = {};
   let total = 0;
@@ -118,6 +121,44 @@ export default function CodeTab({
   handleEntryClick,
   loadingFile
 }) {
+  const navigate = useNavigate();
+  const [loadingCodespace, setLoadingCodespace] = React.useState(false);
+
+  const handleOpenRepoInCodespace = async () => {
+    try {
+      setLoadingCodespace(true);
+      await apiClient.post('/ide/load-codespace', { type: 'repo', owner, repo });
+      jsonToast.success('Codespace ready!');
+      navigate('/ide');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
+      setLoadingCodespace(false);
+    }
+  };
+
+  const handleOpenFileInCodespace = async () => {
+    try {
+      setLoadingCodespace(true);
+      await apiClient.post('/ide/load-codespace', { 
+        type: 'file', 
+        hash: activeFile.hash, 
+        filename: activeFile.name 
+      });
+      jsonToast.success('Codespace ready!');
+      navigate('/ide');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
+      setLoadingCodespace(false);
+    }
+  };
+
+  const isRepo100PercentPython = React.useMemo(() => {
+    const langs = calculateLanguages(rootTree);
+    return langs.length === 1 && langs[0].name === 'Python';
+  }, [rootTree]);
+
+  const isPythonFile = activeFile?.name?.endsWith('.py');
+
   if (isEmpty) {
     return <EmptyRepoView repoData={repoData} remoteUrl={remoteUrl} copyToClipboard={copyToClipboard} />;
   }
@@ -262,36 +303,49 @@ export default function CodeTab({
             </div>
           )}
           {/* Breadcrumbs Navigation */}
-          <div className="flex items-center gap-1.5 text-xs text-gray-600 px-1">
-            <button
-              onClick={() => handleBreadcrumbClick(-1)}
-              className="font-bold text-gray-900 hover:underline cursor-pointer"
-            >
-              {repoData.name}
-            </button>
-            {pathSegments.map((segment, idx) => (
-              <React.Fragment key={idx}>
-                <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
-                <button
-                  onClick={() => handleBreadcrumbClick(idx)}
-                  className={`hover:underline cursor-pointer ${
-                    idx === pathSegments.length - 1 && !activeFile
-                      ? 'font-bold text-gray-900'
-                      : 'text-gray-600'
-                  }`}
-                >
-                  {segment}
-                </button>
-              </React.Fragment>
-            ))}
-            {activeFile && (
-              <>
-                <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
-                <span className="font-bold text-gray-900 flex items-center gap-1">
-                  {getFileIcon(activeFile.name)}
-                  {activeFile.name}
-                </span>
-              </>
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5 text-xs text-gray-600">
+              <button
+                onClick={() => handleBreadcrumbClick(-1)}
+                className="font-bold text-gray-900 hover:underline cursor-pointer"
+              >
+                {repoData.name}
+              </button>
+              {pathSegments.map((segment, idx) => (
+                <React.Fragment key={idx}>
+                  <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                  <button
+                    onClick={() => handleBreadcrumbClick(idx)}
+                    className={`hover:underline cursor-pointer ${
+                      idx === pathSegments.length - 1 && !activeFile
+                        ? 'font-bold text-gray-900'
+                        : 'text-gray-600'
+                    }`}
+                  >
+                    {segment}
+                  </button>
+                </React.Fragment>
+              ))}
+              {activeFile && (
+                <>
+                  <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                  <span className="font-bold text-gray-900 flex items-center gap-1">
+                    {getFileIcon(activeFile.name)}
+                    {activeFile.name}
+                  </span>
+                </>
+              )}
+            </div>
+            
+            {isRepo100PercentPython && !activeFile && (
+              <button
+                onClick={handleOpenRepoInCodespace}
+                disabled={loadingCodespace}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Code2 size={14} />
+                {loadingCodespace ? 'Preparing Codespace...' : 'Open in Codespace'}
+              </button>
             )}
           </div>
 
@@ -305,6 +359,16 @@ export default function CodeTab({
                   <span className="text-gray-400 font-normal">({activeFile.size} bytes)</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isPythonFile && (
+                    <button
+                      onClick={handleOpenFileInCodespace}
+                      disabled={loadingCodespace}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-blue-600 border border-blue-600 rounded hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Code2 size={12} />
+                      {loadingCodespace ? 'Opening...' : 'Open in Codespace'}
+                    </button>
+                  )}
                   <button
                     onClick={() => copyToClipboard(activeFile.content, true)}
                     className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors cursor-pointer"

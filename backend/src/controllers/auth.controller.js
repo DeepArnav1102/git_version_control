@@ -182,9 +182,11 @@ const refresh = asyncHandler(async (req, res) => {
     const user = await User.findById(tokenDoc.userId);
     if (!user) throw new ApiError(401, 'User no longer exists');
 
-    // Delete the old refresh token and generate new ones (token rotation)
-    // This entirely prevents the database from bloating with old tokens.
-    await tokenDoc.deleteOne();
+    // Instead of deleting the old refresh token immediately (which causes race conditions
+    // with multiple tabs), we give it a short 30-second grace period by updating expiresAt.
+    // MongoDB's TTL index will clean it up automatically.
+    tokenDoc.expiresAt = new Date(Date.now() + 30 * 1000); // 30 seconds
+    await tokenDoc.save();
 
     const { accessToken, refreshToken: newRefreshToken } = await generateAuthTokens(user);
     setRefreshTokenCookie(res, newRefreshToken);

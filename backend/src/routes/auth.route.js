@@ -224,7 +224,7 @@ router.post('/google/callback', googleCallback);
  *       200:
  *         description: Returns a new accessToken
  */
-router.post('/refresh', authLimiter, refresh);
+router.post('/refresh', refresh);
 
 /**
  * @swagger
