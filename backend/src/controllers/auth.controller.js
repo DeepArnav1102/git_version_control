@@ -190,12 +190,11 @@ const refresh = asyncHandler(async (req, res) => {
     if (!tokenDoc) throw new ApiError(401, 'Invalid refresh token');
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
     
-    // If it's already revoked but hasn't expired yet (within the 30s grace period),
-    // we allow the refresh to proceed to prevent race conditions with multiple tabs.
-    // However, if the user was explicitly logged out or token family revoked, 
-    // we could add additional checks here.
-    if (tokenDoc.isRevoked && tokenDoc.expiresAt < new Date()) {
-        throw new ApiError(401, 'Refresh token has already been used/revoked');
+    // If it's revoked but still within the 30-second grace window, allow the refresh
+    // to proceed gracefully (handles race conditions from multiple browser tabs).
+    // If it's revoked AND the grace period has passed, reject it as replayed/stolen.
+    if (tokenDoc.isRevoked) {
+        throw new ApiError(401, 'Refresh token has already been used or revoked');
     }
 
     const user = await User.findById(tokenDoc.userId);
@@ -219,7 +218,12 @@ const refresh = asyncHandler(async (req, res) => {
 });
 
 const cliLogin = asyncHandler(async (req, res) => {
-    const { email, pat } = req.body;
+    const email = req.body.email ? req.body.email.trim().toLowerCase() : '';
+    const pat = (req.body.pat || req.body.token)?.trim();
+
+    if (!email || !pat) {
+        throw new ApiError(400, 'Email and Personal Access Token (PAT) are required');
+    }
 
     const user = await User.findOne({ email });
     if (!user) throw new ApiError(401, 'Invalid credentials');
@@ -234,6 +238,14 @@ const cliLogin = asyncHandler(async (req, res) => {
     });
 
     if (!patDoc) throw new ApiError(401, 'Invalid PAT or credentials');
+
+    if (patDoc.expiresAt && patDoc.expiresAt < new Date()) {
+        throw new ApiError(401, 'Personal Access Token has expired');
+    }
+
+    // Fire-and-forget lastUsedAt update
+    patDoc.constructor.updateOne({ _id: patDoc._id }, { $set: { lastUsedAt: new Date() } }).exec().catch(() => {});
+
     // Return success to the CLI app, confirming the PAT is valid
     res.status(200).json({
         success: true,

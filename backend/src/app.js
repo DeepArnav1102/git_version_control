@@ -40,6 +40,13 @@ app.get('/objects/:hash/exists', protect, checkObjectExists);
 app.post('/objects', protect, storeObject);
 app.post('/refs', protect, updateRef);
 
+const ApiError = require('./utils/ApiError');
+
+// Catch 404 and forward to error handler
+app.use((req, res, next) => {
+    next(new ApiError(404, `Route ${req.method} ${req.originalUrl} not found`));
+});
+
 app.use(errorHandler);
 
 module.exports = app;
