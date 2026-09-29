@@ -1,39 +1,27 @@
 const express = require('express');
 const validate = require('../middlewares/validate.middleware');
-const { 
-    register, 
-    login, 
+const {
+    registerSchema,
+    loginSchema,
+    cliLoginSchema,
+    verifyOtpSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema,
+} = require('../validations/auth.validation');
+const {
+    register,
+    login,
     verifyEmail,
     resendVerification,
     forgotPassword,
     resetPassword,
-    googleCallback, 
-    refresh, 
+    googleCallback,
+    refresh,
     cliLogin,
-    logout
+    logout,
 } = require('../controllers/auth.controller');
-const { 
-    registerSchema, 
-    loginSchema, 
-    cliLoginSchema,
-    verifyOtpSchema,
-    forgotPasswordSchema,
-    resetPasswordSchema
-} = require('../validations/auth.validation');
+const { protect } = require('../middlewares/auth.middleware');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
-const rateLimit = require('express-rate-limit');
-const ApiError = require('../utils/ApiError');
-
-// Strict limiter: 10 attempts per 15 minutes per IP — for login, register, refresh
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res, next) => {
-        next(new ApiError(429, 'Too many attempts from this IP. Please try again in 15 minutes.'));
-    }
-});
 
 const router = express.Router();
 
@@ -41,7 +29,7 @@ const router = express.Router();
  * @swagger
  * /api/v1/auth/register:
  *   post:
- *     summary: Register a new user
+ *     summary: Register a new user with email and password
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -49,9 +37,6 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - email
- *               - password
  *             properties:
  *               email:
  *                 type: string
@@ -59,64 +44,17 @@ const router = express.Router();
  *                 type: string
  *     responses:
  *       201:
- *         description: User created, OTP sent
+ *         description: User created successfully, verification email sent
+ *       409:
+ *         description: User already exists
  */
-router.post('/register', authLimiter, validate(registerSchema), register);
-
-/**
- * @swagger
- * /api/v1/auth/verify-email:
- *   post:
- *     summary: Verify email with OTP
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - otp
- *             properties:
- *               email:
- *                 type: string
- *               otp:
- *                 type: string
- *     responses:
- *       200:
- *         description: Email verified successfully
- */
-router.post('/verify-email', validate(verifyOtpSchema), verifyEmail);
-
-/**
- * @swagger
- * /api/v1/auth/resend-verification:
- *   post:
- *     summary: Resend verification OTP
- *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *     responses:
- *       200:
- *         description: OTP resent
- */
-router.post('/resend-verification', otpLimiter, validate(forgotPasswordSchema), resendVerification);
+router.post('/register', validate(registerSchema), register);
 
 /**
  * @swagger
  * /api/v1/auth/login:
  *   post:
- *     summary: Login user
+ *     summary: Log in with email and password
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -124,9 +62,6 @@ router.post('/resend-verification', otpLimiter, validate(forgotPasswordSchema), 
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - email
- *               - password
  *             properties:
  *               email:
  *                 type: string
@@ -134,30 +69,38 @@ router.post('/resend-verification', otpLimiter, validate(forgotPasswordSchema), 
  *                 type: string
  *     responses:
  *       200:
- *         description: Login successful
+ *         description: Login successful, tokens set in cookies
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Email not verified
  */
-router.post('/login', authLimiter, validate(loginSchema), login);
+router.post('/login', validate(loginSchema), login);
+
+/**
+ * @swagger
+ * /api/v1/auth/verify-email:
+ *   post:
+ *     summary: Verify email address with OTP
+ *     tags: [Auth]
+ */
+router.post('/verify-email', validate(verifyOtpSchema), verifyEmail);
+
+/**
+ * @swagger
+ * /api/v1/auth/resend-verification:
+ *   post:
+ *     summary: Resend email verification OTP
+ *     tags: [Auth]
+ */
+router.post('/resend-verification', otpLimiter, resendVerification);
 
 /**
  * @swagger
  * /api/v1/auth/forgot-password:
  *   post:
- *     summary: Request password reset OTP
+ *     summary: Request a password reset OTP
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *     responses:
- *       200:
- *         description: OTP sent
  */
 router.post('/forgot-password', otpLimiter, validate(forgotPasswordSchema), forgotPassword);
 
@@ -167,26 +110,6 @@ router.post('/forgot-password', otpLimiter, validate(forgotPasswordSchema), forg
  *   post:
  *     summary: Reset password using OTP
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - otp
- *               - newPassword
- *             properties:
- *               email:
- *                 type: string
- *               otp:
- *                 type: string
- *               newPassword:
- *                 type: string
- *     responses:
- *       200:
- *         description: Password reset successfully
  */
 router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
 
@@ -194,22 +117,8 @@ router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
  * @swagger
  * /api/v1/auth/google/callback:
  *   post:
- *     summary: Google OAuth 2.0 callback
+ *     summary: Exchange Google OAuth code for tokens
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               code:
- *                 type: string
- *               redirectUri:
- *                 type: string
- *     responses:
- *       200:
- *         description: Successfully logged in via Google
  */
 router.post('/google/callback', googleCallback);
 
@@ -217,12 +126,8 @@ router.post('/google/callback', googleCallback);
  * @swagger
  * /api/v1/auth/refresh:
  *   post:
- *     summary: Refresh Access Token
+ *     summary: Refresh the access token using the refresh token cookie
  *     tags: [Auth]
- *     description: Requires a valid HttpOnly secure cookie containing the refreshToken
- *     responses:
- *       200:
- *         description: Returns a new accessToken
  */
 router.post('/refresh', refresh);
 
@@ -230,35 +135,48 @@ router.post('/refresh', refresh);
  * @swagger
  * /api/v1/auth/cli/login:
  *   post:
- *     summary: Login via CLI using a PAT
+ *     summary: Verify CLI login using email and PAT
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *               pat:
- *                 type: string
- *     responses:
- *       200:
- *         description: Successfully logged in, returns tokens
  */
 router.post('/cli/login', validate(cliLoginSchema), cliLogin);
 
 /**
  * @swagger
+ * /api/v1/auth/cli-login:
+ *   post:
+ *     summary: Verify CLI login using email and PAT
+ *     tags: [Auth]
+ */
+router.post('/cli-login', validate(cliLoginSchema), cliLogin);
+
+/**
+ * @swagger
  * /api/v1/auth/logout:
  *   post:
- *     summary: Logout user
+ *     summary: Log out the current user
  *     tags: [Auth]
- *     responses:
- *       200:
- *         description: Successfully logged out
  */
-router.post('/logout', logout);
+router.post('/logout', protect, logout);
+
+/**
+ * @swagger
+ * /api/v1/auth/me:
+ *   get:
+ *     summary: Get current authenticated user info
+ *     tags: [Auth]
+ */
+router.get('/me', protect, (req, res) => {
+    res.status(200).json({
+        success: true,
+        data: {
+            user: {
+                id: req.user._id,
+                email: req.user.email,
+                username: req.user.username,
+                isEmailVerified: req.user.isEmailVerified,
+            },
+        },
+    });
+});
 
 module.exports = router;
