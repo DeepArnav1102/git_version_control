@@ -12,7 +12,8 @@ const ApiError = require('../utils/ApiError');
  * @throws {Error} If the JWT_PEPPER_SECRET environment variable is missing.
  */
 const getJwtSecret = (userSalt) => {
-    const pepper = process.env.JWT_PEPPER_SECRET || 'rusty_jwt_pepper_secret_fallback_key';
+    // We prioritize ACCESS_TOKEN_SECRET as per the new static secrets policy.
+    const pepper = process.env.ACCESS_TOKEN_SECRET || process.env.JWT_PEPPER_SECRET || 'rusty_jwt_pepper_secret_fallback_key';
     return crypto.createHash('sha256').update(pepper + userSalt).digest('hex');
 };
 

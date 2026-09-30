@@ -1,4 +1,5 @@
 import axios from 'axios';
+import useAuthStore from '../store/useAuthStore';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -25,6 +26,7 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         refreshPromise = null;
+        useAuthStore.getState().clearUser();
         return Promise.reject(refreshError);
       }
     }
