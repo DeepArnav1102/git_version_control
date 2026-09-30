@@ -19,6 +19,7 @@ const {
     toggleStarRepo,
     forkRepo,
     syncRepo,
+    deleteRepoFile,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -162,6 +163,15 @@ router.get('/:owner/:repo/commits', getRepoCommits);
  *     tags: [Repositories]
  */
 router.get('/:owner/:repo/commits/:ref', getRepoCommits);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/contents/*:
+ *   delete:
+ *     summary: Delete a file from the repository
+ *     tags: [Repositories]
+ */
+router.delete('/:owner/:repo/contents/*filePath', protect, deleteRepoFile);
 
 // ─── CLI Push Endpoints (Full path: :owner/:repo) ──────────────────────
 

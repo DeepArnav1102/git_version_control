@@ -25,10 +25,6 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         refreshPromise = null;
-        const publicRoutes = ['/', '/signup', '/forgot-password', '/verify'];
-        if (!publicRoutes.includes(window.location.pathname)) {
-          window.location.href = '/'; // Redirect to sign in
-        }
         return Promise.reject(refreshError);
       }
     }

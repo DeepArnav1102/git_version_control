@@ -208,11 +208,6 @@ const refresh = asyncHandler(async (req, res) => {
     if (!tokenDoc) throw new ApiError(401, 'Invalid refresh token');
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
     
-    // If it's revoked but still within the 30-second grace window, allow the refresh
-    // to proceed gracefully (handles race conditions from multiple browser tabs).
-    // If it's revoked AND the grace period has passed, reject it as replayed/stolen.
-    if (tokenDoc.isRevoked) {
-        throw new ApiError(401, 'Refresh token has already been used or revoked');
 
     // If it's already revoked but hasn't expired yet (within the 30s grace period),
     // we allow the refresh to proceed to prevent race conditions with multiple tabs.

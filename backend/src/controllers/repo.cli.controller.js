@@ -61,15 +61,8 @@ const storeObject = asyncHandler(async (req, res) => {
         req.user
     );
 
-    // Auto-create repository if pushing to a new repo
     if (!repoDoc) {
-        repoDoc = await Repository.create({
-            owner: req.user._id,
-            name: repoName,
-            defaultBranch: 'main',
-            branches: [],
-            isPrivate: true,
-        });
+        throw new ApiError(404, 'Repository not found. Please create it first.');
     }
 
     await GitObject.updateOne(
@@ -134,13 +127,7 @@ const updateRef = asyncHandler(async (req, res) => {
     );
 
     if (!repoDoc) {
-        repoDoc = await Repository.create({
-            owner: req.user._id,
-            name: repoName,
-            defaultBranch: cleanBranch || 'main',
-            branches: [],
-            isPrivate: true,
-        });
+        throw new ApiError(404, 'Repository not found. Please create it first.');
     }
 
     // Inspect commit to extract metadata
