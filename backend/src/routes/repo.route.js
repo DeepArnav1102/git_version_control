@@ -12,11 +12,14 @@ const {
     checkObjectExists,
     storeObject,
     updateRef,
+    getRemoteRef,
+    getObject,
     requestDeleteOtp,
     deleteRepo,
     toggleStarRepo,
     forkRepo,
     syncRepo,
+    deleteRepoFile,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -161,6 +164,15 @@ router.get('/:owner/:repo/commits', getRepoCommits);
  */
 router.get('/:owner/:repo/commits/:ref', getRepoCommits);
 
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/contents/*:
+ *   delete:
+ *     summary: Delete a file from the repository
+ *     tags: [Repositories]
+ */
+router.delete('/:owner/:repo/contents/*filePath', protect, deleteRepoFile);
+
 // ─── CLI Push Endpoints (Full path: :owner/:repo) ──────────────────────
 
 /**
@@ -190,7 +202,27 @@ router.post('/:owner/:repo/objects', protect, storeObject);
  */
 router.post('/:owner/:repo/refs', protect, updateRef);
 
-// ─── CLI Push Endpoints (Short path: :repo) ───────────────────────────
+// ─── CLI Fetch Endpoints (Full path: :owner/:repo) ────────────────────
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs/{branch}:
+ *   get:
+ *     summary: Get a remote branch reference (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/refs/:branch', protect, getRemoteRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/objects/{hash}:
+ *   get:
+ *     summary: Download a git object (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/objects/:hash', protect, getObject);
+
+// ─── CLI Push / Fetch Endpoints (Short path: :repo) ───────────────────
 
 /**
  * @swagger
@@ -218,5 +250,23 @@ router.post('/:repo/objects', protect, storeObject);
  *     tags: [CLI]
  */
 router.post('/:repo/refs', protect, updateRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/refs/{branch}:
+ *   get:
+ *     summary: Get a remote branch reference (CLI fetch, Short path)
+ *     tags: [CLI]
+ */
+router.get('/:repo/refs/:branch', protect, getRemoteRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/objects/{hash}:
+ *   get:
+ *     summary: Download a git object (CLI fetch, Short path)
+ *     tags: [CLI]
+ */
+router.get('/:repo/objects/:hash', protect, getObject);
 
 module.exports = router;

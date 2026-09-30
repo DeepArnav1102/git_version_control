@@ -6,11 +6,9 @@ const useAuthStore = create((set) => ({
   isInitializing: true,
   
   fetchUser: async () => {
-    if (localStorage.getItem('isAuthenticated') !== 'true') {
-      set({ user: null, isInitializing: false });
-      return null;
-    }
     try {
+      // Always attempt to fetch the user. The axios interceptor will handle 401s
+      // and attempt to refresh the token automatically.
       const response = await apiClient.get('/users/me');
       localStorage.setItem('isAuthenticated', 'true');
       set({ user: response.data.data.user, isInitializing: false });
@@ -25,6 +23,16 @@ const useAuthStore = create((set) => ({
   clearUser: () => {
     localStorage.removeItem('isAuthenticated');
     set({ user: null });
+  },
+
+  logout: async () => {
+    try {
+      await apiClient.post('/auth/logout');
+      localStorage.removeItem('isAuthenticated');
+      set({ user: null });
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
   },
 
   setUser: (user) => {

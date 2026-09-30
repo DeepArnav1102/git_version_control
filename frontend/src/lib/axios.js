@@ -1,4 +1,5 @@
 import axios from 'axios';
+import useAuthStore from '../store/useAuthStore';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -25,10 +26,7 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError) {
         refreshPromise = null;
-        const publicRoutes = ['/', '/signup', '/forgot-password', '/verify'];
-        if (!publicRoutes.includes(window.location.pathname)) {
-          window.location.href = '/'; // Redirect to sign in
-        }
+        useAuthStore.getState().clearUser();
         return Promise.reject(refreshError);
       }
     }
