@@ -1,6 +1,7 @@
 const express = require('express');
-const { protect } = require('../middlewares/auth.middleware');
+const { protect, protectOptional } = require('../middlewares/auth.middleware');
 const {
+    checkRepoAvailability,
     createRepo,
     updateRepo,
     getUserRepos,
@@ -20,6 +21,7 @@ const {
     forkRepo,
     syncRepo,
     deleteRepoFile,
+    downloadRepoZip,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -34,6 +36,7 @@ const router = express.Router();
  *     summary: Create a new repository
  *     tags: [Repositories]
  */
+router.get('/check-availability', protect, checkRepoAvailability);
 router.post('/', protect, createRepo);
 
 /**
@@ -52,7 +55,7 @@ router.get('/', protect, getUserRepos);
  *     summary: Get repositories for a specific user
  *     tags: [Repositories]
  */
-router.get('/user/:username', getReposByUsername);
+router.get('/user/:username', protectOptional, getReposByUsername);
 
 // ─── Single Repo Routes ───────────────────────────────────────────────
 
@@ -63,7 +66,7 @@ router.get('/user/:username', getReposByUsername);
  *     summary: Get repository details
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo', getRepoDetails);
+router.get('/:owner/:repo', protectOptional, getRepoDetails);
 
 /**
  * @swagger
@@ -126,7 +129,7 @@ router.post('/:owner/:repo/sync', protect, syncRepo);
  *     summary: Get the repository file tree for the default branch
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/tree', getRepoTree);
+router.get('/:owner/:repo/tree', protectOptional, getRepoTree);
 
 /**
  * @swagger
@@ -135,7 +138,16 @@ router.get('/:owner/:repo/tree', getRepoTree);
  *     summary: Get the repository file tree for a specific reference
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/tree/:ref', getRepoTree);
+router.get('/:owner/:repo/tree/:ref', protectOptional, getRepoTree);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/zip/{ref}:
+ *   get:
+ *     summary: Download the repository as a zip file
+ *     tags: [Repositories]
+ */
+router.get('/:owner/:repo/zip/:ref', protectOptional, downloadRepoZip);
 
 /**
  * @swagger
@@ -144,7 +156,7 @@ router.get('/:owner/:repo/tree/:ref', getRepoTree);
  *     summary: Get a repository blob by hash
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/blob/:hash', getRepoBlob);
+router.get('/:owner/:repo/blob/:hash', protectOptional, getRepoBlob);
 
 /**
  * @swagger
@@ -153,7 +165,7 @@ router.get('/:owner/:repo/blob/:hash', getRepoBlob);
  *     summary: Get commits for the default branch
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/commits', getRepoCommits);
+router.get('/:owner/:repo/commits', protectOptional, getRepoCommits);
 
 /**
  * @swagger
@@ -162,7 +174,7 @@ router.get('/:owner/:repo/commits', getRepoCommits);
  *     summary: Get commits for a specific reference
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/commits/:ref', getRepoCommits);
+router.get('/:owner/:repo/commits/:ref', protectOptional, getRepoCommits);
 
 /**
  * @swagger

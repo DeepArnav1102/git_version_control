@@ -209,11 +209,9 @@ const refresh = asyncHandler(async (req, res) => {
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
     
 
-    // If it's already revoked but hasn't expired yet (within the 30s grace period),
-    // we allow the refresh to proceed to prevent race conditions with multiple tabs.
-    // However, if the user was explicitly logged out or token family revoked, 
-    // we could add additional checks here.
-    if (tokenDoc.isRevoked && tokenDoc.expiresAt < new Date()) {
+    // If the token is revoked AND its 30-second grace period has expired, reject it.
+    // (Revoked tokens get expiresAt = now+30s, so we check > new Date() for the grace period.)
+    if (tokenDoc.isRevoked && tokenDoc.expiresAt <= new Date()) {
         throw new ApiError(401, 'Refresh token has already been used/revoked');
     }
 

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/useAuthStore';
 import Navbar from './Navbar';
 import { Lottie } from 'lottie-react';
@@ -7,24 +7,21 @@ import loadingAnimation from '../assets/Loading V2/loadingV2.json';
 
 export default function MainLayout({ children }) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { user, isInitializing, fetchUser } = useAuthStore();
+
+  const { user, isInitializing } = useAuthStore();
 
   useEffect(() => {
-    const init = async () => {
-      // If we don't have a user in store, fetch it
-      if (!user) {
-        const fetchedUser = await fetchUser();
-        if (!fetchedUser) {
-          navigate('/', { replace: true });
-        } else if (!fetchedUser.username) {
-          // If logged in but no username, go to onboarding
-          navigate('/onboarding', { replace: true });
-        }
-      }
-    };
-    init();
-  }, [user, fetchUser, navigate, location.pathname]);
+    // Wait until the global auth bootstrap (initializeAuth in App.jsx) is done.
+    // While isInitializing is true the refresh token flow may still be in-flight —
+    // redirecting now would incorrectly send the user to the login page.
+    if (isInitializing) return;
+
+    if (!user) {
+      navigate('/', { replace: true });
+    } else if (!user.username) {
+      navigate('/onboarding', { replace: true });
+    }
+  }, [isInitializing, user, navigate]);
 
   if (isInitializing) {
     return (

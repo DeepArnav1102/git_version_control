@@ -14,6 +14,7 @@ import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
 import { Lottie } from 'lottie-react';
 import loadingAnimation from '../assets/Loading V2/loadingV2.json';
+import useProfileShortcuts from '../hooks/useProfileShortcuts';
 
 export default function Profile() {
   const { user: currentUser, setUser } = useAuthStore();
@@ -54,11 +55,17 @@ export default function Profile() {
 
   // Sync state with URL parameter if navigated from elsewhere
   useEffect(() => {
-    const nextTab = tabParam || 'overview';
+    let nextTab = tabParam || 'overview';
+    
+    // Prevent non-owners from viewing the tokens tab
+    if (nextTab === 'tokens' && !isOwner) {
+      nextTab = 'overview';
+    }
+
     if (nextTab !== activeTab) {
       setActiveTab(nextTab);
     }
-  }, [tabParam, activeTab]);
+  }, [tabParam, activeTab, isOwner]);
 
   // Keep URL parameter in sync with state when user clicks FloatingNav
   const handleTabChange = (newTab) => {
@@ -69,6 +76,14 @@ export default function Profile() {
       setSearchParams({}, { replace: true });
     }
   };
+
+  useProfileShortcuts({
+    onEditProfile: () => { if (isOwner) setEditing(true); },
+    onSwitchToOverview: () => handleTabChange('overview'),
+    onSwitchToRepositories: () => handleTabChange('repositories'),
+    onSwitchToStarred: () => handleTabChange('stars'),
+    onSwitchToTokens: () => { if (isOwner) handleTabChange('tokens'); }
+  });
 
   const defaultPfp =
     import.meta.env.VITE_DEFAULT_PFP_URL ||

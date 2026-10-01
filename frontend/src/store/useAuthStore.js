@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import apiClient from '../lib/axios';
 
-const useAuthStore = create((set) => ({
+const useAuthStore = create((set, get) => ({
   user: null,
   isInitializing: true,
-  
+
   fetchUser: async () => {
     try {
       // Always attempt to fetch the user. The axios interceptor will handle 401s
@@ -20,6 +20,14 @@ const useAuthStore = create((set) => ({
     }
   },
 
+  // Call this ONCE at the app root (main.jsx / App.jsx).
+  // Subsequent calls are no-ops once initialization is done.
+  initializeAuth: async () => {
+    // Already done — skip to avoid duplicate network calls
+    if (!get().isInitializing) return;
+    await get().fetchUser();
+  },
+
   clearUser: () => {
     localStorage.removeItem('isAuthenticated');
     set({ user: null });
@@ -31,13 +39,13 @@ const useAuthStore = create((set) => ({
       localStorage.removeItem('isAuthenticated');
       set({ user: null });
     } catch (error) {
-      console.error("Logout failed", error);
+      console.error('Logout failed', error);
     }
   },
 
   setUser: (user) => {
     set({ user });
-  }
+  },
 }));
 
 export default useAuthStore;

@@ -211,48 +211,8 @@ const updateDashboardCard = asyncHandler(async (req, res) => {
     });
 });
 
-const searchUsers = asyncHandler(async (req, res) => {
-    const { q } = req.query;
-    
-    if (!q || q.trim() === '') {
-        return res.status(200).json({
-            success: true,
-            data: { users: [] }
-        });
-    }
 
-    const users = await User.aggregate([
-        {
-            $search: {
-                index: 'user_search_index',
-                text: {
-                    query: q,
-                    path: ['name', 'username'],
-                    fuzzy: {
-                        maxEdits: 1,
-                        prefixLength: 1
-                    }
-                }
-            }
-        },
-        { $limit: 20 },
-        {
-            $project: {
-                name: 1,
-                username: 1,
-                profilePicture: 1,
-                bio: 1,
-                _id: 1,
-                score: { $meta: 'searchScore' }
-            }
-        }
-    ]);
 
-    res.status(200).json({
-        success: true,
-        data: { users }
-    });
-});
 
 const getPublicProfile = asyncHandler(async (req, res) => {
     const { username } = req.params;
@@ -401,7 +361,6 @@ module.exports = {
     updateProfile,
     uploadProfilePhoto,
     updateDashboardCard,
-    searchUsers,
     getPublicProfile,
     updatePinnedRepos,
     getUserContributions,

@@ -378,6 +378,10 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
     const repoDoc = await resolveRepo(owner, repo, req.user);
     if (!repoDoc) throw new ApiError(404, 'Repository not found');
 
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to modify this repository');
+    }
+
     const branch = repoDoc.branches.find(b => b.name === branchName);
     if (!branch) throw new ApiError(404, 'Branch not found');
 
@@ -476,4 +480,79 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
     res.status(200).json({ success: true, message: 'File deleted successfully', newCommitHash });
 });
 
-module.exports = { getRepoTree, getRepoBlob, getRepoCommits, deleteRepoFile };
+// ─── Download Repo as ZIP ──────────────────────────────────────────────
+const downloadRepoZip = asyncHandler(async (req, res) => {
+    const { owner, repo, ref = 'main' } = req.params;
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    if (repoDoc.isPrivate && (!req.user || repoDoc.owner.toString() !== req.user._id.toString())) {
+        throw new ApiError(403, 'Access denied to private repository');
+    }
+
+    let commitHash = null;
+    const branch = repoDoc.branches.find((b) => b.name === ref);
+    if (branch) {
+        commitHash = branch.commitHash;
+    } else {
+        commitHash = ref;
+    }
+
+    let commitObj = await GitObject.findOne({
+        repositoryId: repoDoc._id,
+        hash: commitHash,
+        type: 'commit',
+    });
+    if (!commitObj) {
+        commitObj = await GitObject.findOne({
+            hash: commitHash,
+            type: 'commit',
+        });
+    }
+    if (!commitObj) throw new ApiError(404, 'Commit not found');
+
+    let commitData;
+    try {
+        commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
+    } catch {
+        throw new ApiError(500, 'Invalid commit format');
+    }
+
+    const { buildRecursiveTree } = require('../utils/repoHelpers');
+    const treeMap = await buildRecursiveTree(commitData.tree, repoDoc._id);
+
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip();
+
+    const appendToArchive = async (nodes) => {
+        for (const node of nodes) {
+            if (node.object_type === 'blob') {
+                let blobObj = await GitObject.findOne({
+                    repositoryId: repoDoc._id,
+                    hash: node.object_hash,
+                    type: 'blob',
+                });
+                if (!blobObj) {
+                    blobObj = await GitObject.findOne({
+                        hash: node.object_hash,
+                        type: 'blob',
+                    });
+                }
+                if (blobObj && blobObj.data) {
+                    zip.addFile(node.path, Buffer.from(blobObj.data));
+                }
+            } else if (node.object_type === 'tree' && node.children) {
+                await appendToArchive(node.children);
+            }
+        }
+    };
+
+    await appendToArchive(treeMap);
+
+    const zipBuffer = zip.toBuffer();
+    res.attachment(`${repoDoc.name}-${ref}.zip`);
+    res.status(200).send(zipBuffer);
+});
+
+module.exports = { getRepoTree, getRepoBlob, getRepoCommits, deleteRepoFile, downloadRepoZip };

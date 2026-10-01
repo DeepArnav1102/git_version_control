@@ -65,6 +65,10 @@ const storeObject = asyncHandler(async (req, res) => {
         throw new ApiError(404, 'Repository not found. Please create it first.');
     }
 
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to push to this repository');
+    }
+
     await GitObject.updateOne(
         {
             repositoryId: repoDoc._id,
@@ -128,6 +132,10 @@ const updateRef = asyncHandler(async (req, res) => {
 
     if (!repoDoc) {
         throw new ApiError(404, 'Repository not found. Please create it first.');
+    }
+
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'You do not have permission to push to this repository');
     }
 
     // Inspect commit to extract metadata
