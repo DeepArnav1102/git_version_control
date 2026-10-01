@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react';
+import { Lock, Globe, Pin, Eye, ChevronDown, GitFork, Star, GitBranch, History, Terminal, Check, Copy, RefreshCw, ArrowUp, ArrowDown, Download, Code2 } from 'lucide-react';
 
 export default function RepoHeader({
   repoData,
@@ -20,8 +20,40 @@ export default function RepoHeader({
   handleToggleStar,
   handleFork,
   handleSync,
+  handleDownloadZip,
+  handleOpenRepoInCodespace,
+  loadingCodespace,
+  isRepo100PercentPython,
   currentUser
 }) {
+  const dropdownRef = useRef(null);
+  const [copiedRemote, setCopiedRemote] = useState(false);
+  const [copiedPush, setCopiedPush] = useState(false);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowCloneDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [setShowCloneDropdown]);
+
+  const handleCopyRemote = () => {
+    copyToClipboard(`rusty remote add origin ${remoteUrl}`);
+    setCopiedRemote(true);
+    setTimeout(() => setCopiedRemote(false), 2000);
+  };
+
+  const handleCopyPush = () => {
+    copyToClipboard('rusty push');
+    setCopiedPush(true);
+    setTimeout(() => setCopiedPush(false), 2000);
+  };
+
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
       <div>
@@ -154,10 +186,13 @@ export default function RepoHeader({
         {!isEmpty && (
           <>
             {/* Branch selector */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors">
+            <button
+              data-branch-selector
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
               <GitBranch size={13} />
               <span>{currentBranch}</span>
-            </div>
+            </button>
 
             {/* Commits count */}
             <button
@@ -169,7 +204,7 @@ export default function RepoHeader({
             </button>
 
             {/* Clone / Remote Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setShowCloneDropdown(!showCloneDropdown)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2ea043] hover:bg-[#2c974b] text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
@@ -200,12 +235,53 @@ export default function RepoHeader({
 
                   <div className="text-[11px] text-gray-600 space-y-2">
                     <p className="font-semibold text-gray-800">Add remote in Rusty CLI:</p>
-                    <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
-                      rusty remote add origin {remoteUrl}
-                    </pre>
-                    <pre className="p-2 bg-gray-900 text-gray-100 rounded-md font-mono text-[10.5px] overflow-x-auto">
-                      rusty push
-                    </pre>
+                    <div className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-md">
+                      <span className="font-mono text-[10.5px] text-gray-700 truncate select-all flex-1">
+                        rusty remote add origin {remoteUrl}
+                      </span>
+                      <button
+                        onClick={handleCopyRemote}
+                        className="p-1 text-gray-500 hover:text-black transition-colors cursor-pointer"
+                        title="Copy Command"
+                      >
+                        {copiedRemote ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded-md">
+                      <span className="font-mono text-[10.5px] text-gray-700 truncate select-all flex-1">
+                        rusty push
+                      </span>
+                      <button
+                        onClick={handleCopyPush}
+                        className="p-1 text-gray-500 hover:text-black transition-colors cursor-pointer"
+                        title="Copy Command"
+                      >
+                        {copiedPush ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isRepo100PercentPython && (
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <button
+                        onClick={handleOpenRepoInCodespace}
+                        disabled={loadingCodespace}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white border border-transparent rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        <Code2 size={14} />
+                        {loadingCodespace ? 'Preparing Codespace...' : 'Open in Codespace'}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <button
+                      onClick={handleDownloadZip}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 transition-colors cursor-pointer"
+                    >
+                      <Download size={14} />
+                      Download ZIP
+                    </button>
                   </div>
                 </div>
               )}

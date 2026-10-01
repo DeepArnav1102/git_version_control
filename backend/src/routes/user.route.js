@@ -1,6 +1,6 @@
 const express = require('express');
 const { protect, protectOptional } = require('../middlewares/auth.middleware');
-const { checkUsernameLimiter } = require('../middlewares/rateLimit.middleware');
+const { checkUsernameLimiter, otpLimiter, searchLimiter } = require('../middlewares/rateLimit.middleware');
 const validate = require('../middlewares/validate.middleware');
 const {
     getMe,
@@ -8,12 +8,16 @@ const {
     updateOnboarding,
     updateProfile,
     updateDashboardCard,
-    searchUsers,
     getPublicProfile,
     updatePinnedRepos,
     getUserContributions,
     toggleFollowUser,
 } = require('../controllers/user.controller');
+
+const {
+    searchUsers,
+    globalSearch,
+} = require('../controllers/search.controller');
 
 const {
     checkUsernameSchema,
@@ -86,6 +90,7 @@ router.get('/check-username', checkUsernameLimiter, validate(checkUsernameSchema
  *         description: Search results
  */
 router.get('/search', protectOptional, searchUsers);
+router.get('/global-search', searchLimiter, protectOptional, globalSearch);
 
 /**
  * @swagger

@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { 
-  Folder, PanelLeftClose, Search, PanelLeft, 
-  ChevronRight, Check, Copy, Star, Eye, GitFork, X, MoreVertical, Trash2, History
+import {
+  Folder, PanelLeftClose, Search, PanelLeft,
+  ChevronRight, Check, Copy, Star, Eye, GitFork, X, MoreVertical, Trash2, History, Download
 } from 'lucide-react';
 import { getFileIcon } from '../../utils/fileIcons';
 import EmptyRepoView from './EmptyRepoView';
@@ -17,81 +17,7 @@ import { jsonToast } from '../../lib/jsonToast';
 const defaultPfp = import.meta.env.VITE_DEFAULT_PFP_URL || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 
 
-const getLanguageColorHex = (language) => {
-  const colors = {
-    JavaScript: '#f1e05a',
-    TypeScript: '#3178c6',
-    Python: '#3572A5',
-    Java: '#b07219',
-    'C++': '#f34b7d',
-    'C#': '#178600',
-    Ruby: '#701516',
-    Go: '#00ADD8',
-    Rust: '#dea584',
-    'Jupyter Notebook': '#DA5B0B',
-    HTML: '#e34c26',
-    CSS: '#563d7c'
-  };
-  return colors[language] || '#ccc';
-};
-
-
-const extensionToLanguage = {
-  '.js': 'JavaScript',
-  '.jsx': 'JavaScript',
-  '.ts': 'TypeScript',
-  '.tsx': 'TypeScript',
-  '.py': 'Python',
-  '.java': 'Java',
-  '.cpp': 'C++',
-  '.hpp': 'C++',
-  '.c': 'C',
-  '.h': 'C',
-  '.cs': 'C#',
-  '.rb': 'Ruby',
-  '.go': 'Go',
-  '.rs': 'Rust',
-  '.php': 'PHP',
-  '.swift': 'Swift',
-  '.kt': 'Kotlin',
-  '.html': 'HTML',
-  '.css': 'CSS',
-  '.md': 'Markdown',
-  '.json': 'JSON',
-  '.ipynb': 'Jupyter Notebook'
-};
-
-export const calculateLanguages = (tree) => {
-  if (!tree) return [];
-  const counts = {};
-  let total = 0;
-
-  const traverse = (nodes) => {
-    for (const node of nodes) {
-      if (node.object_type === 'blob') {
-        const ext = node.name.includes('.') ? node.name.substring(node.name.lastIndexOf('.')).toLowerCase() : '';
-        const lang = extensionToLanguage[ext];
-        if (lang && lang !== 'Markdown' && lang !== 'JSON') { // Optional: ignore some generic formats like github does
-          counts[lang] = (counts[lang] || 0) + 1;
-          total += 1;
-        }
-      } else if (node.object_type === 'tree' && node.children) {
-        traverse(node.children);
-      }
-    }
-  };
-
-  traverse(tree);
-
-  if (total === 0) return [];
-  
-  return Object.entries(counts)
-    .map(([name, count]) => ({
-      name,
-      percentage: ((count / total) * 100).toFixed(1)
-    }))
-    .sort((a, b) => parseFloat(b.percentage) - parseFloat(a.percentage));
-};
+import { getLanguageColorHex, calculateLanguages } from '../../utils/languageUtils';
 
 export default function CodeTab({
   isEmpty,
@@ -120,7 +46,8 @@ export default function CodeTab({
   handleCloseFile,
   handleEntryClick,
   loadingFile,
-  loadingTree
+  loadingTree,
+  isOwner
 }) {
   const navigate = useNavigate();
   const [loadingCodespace, setLoadingCodespace] = React.useState(false);
@@ -159,25 +86,13 @@ export default function CodeTab({
     return 'just now';
   };
 
-  const handleOpenRepoInCodespace = async () => {
-    try {
-      setLoadingCodespace(true);
-      await apiClient.post('/ide/load-codespace', { type: 'repo', owner, repo });
-      jsonToast.success('Codespace ready!');
-      navigate('/ide');
-    } catch (err) {
-      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
-      setLoadingCodespace(false);
-    }
-  };
-
   const handleOpenFileInCodespace = async () => {
     try {
       setLoadingCodespace(true);
-      await apiClient.post('/ide/load-codespace', { 
-        type: 'file', 
-        hash: activeFile.hash, 
-        filename: activeFile.name 
+      await apiClient.post('/ide/load-codespace', {
+        type: 'file',
+        hash: activeFile.hash,
+        filename: activeFile.name
       });
       jsonToast.success('Codespace ready!');
       navigate('/ide');
@@ -258,6 +173,7 @@ export default function CodeTab({
                   <div className="relative flex items-center">
                     <Search size={12} className="absolute left-2 text-gray-400 pointer-events-none" />
                     <input
+                      data-tree-filter
                       type="text"
                       value={treeFilter}
                       onChange={(e) => setTreeFilter(e.target.value)}
@@ -351,11 +267,10 @@ export default function CodeTab({
                   <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
                   <button
                     onClick={() => handleBreadcrumbClick(idx)}
-                    className={`hover:underline cursor-pointer ${
-                      idx === pathSegments.length - 1 && !activeFile
-                        ? 'font-bold text-gray-900'
-                        : 'text-gray-600'
-                    }`}
+                    className={`hover:underline cursor-pointer ${idx === pathSegments.length - 1 && !activeFile
+                      ? 'font-bold text-gray-900'
+                      : 'text-gray-600'
+                      }`}
                   >
                     {segment}
                   </button>
@@ -371,17 +286,6 @@ export default function CodeTab({
                 </>
               )}
             </div>
-            
-            {isRepo100PercentPython && !activeFile && (
-              <button
-                onClick={handleOpenRepoInCodespace}
-                disabled={loadingCodespace}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-              >
-                <Code2 size={14} />
-                {loadingCodespace ? 'Preparing Codespace...' : 'Open in Codespace'}
-              </button>
-            )}
           </div>
 
           {/* File Viewer (Active File) */}
@@ -421,26 +325,80 @@ export default function CodeTab({
                     {fileMenuOpen && (
                       <>
                         <div className="fixed inset-0 z-0" onClick={() => setFileMenuOpen(false)}></div>
-                        <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10 py-1">
+                        <div className="absolute right-0 mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-10 py-1">
                           <button
-                            onClick={async () => {
+                            onClick={() => {
                               setFileMenuOpen(false);
                               try {
-                                await apiClient.delete(`/repos/${owner}/${repo}/contents/${activeFilePath}?branch=${currentBranch}`);
-                                jsonToast.success(`Deleted ${activeFile.name} successfully`);
-                                handleCloseFile();
-                                setTimeout(() => {
-                                  window.location.reload();
-                                }, 500);
+                                let blob;
+                                const ext = activeFile.name.split('.').pop().toLowerCase();
+                                const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
+                                if (isImage) {
+                                  const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
+                                  if (ext === 'svg') {
+                                    blob = new Blob([activeFile.content], { type: 'image/svg+xml' });
+                                  } else if (isLikelyBase64) {
+                                    const byteCharacters = atob(activeFile.content);
+                                    const byteNumbers = new Array(byteCharacters.length);
+                                    for (let i = 0; i < byteCharacters.length; i++) {
+                                      byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                    }
+                                    const byteArray = new Uint8Array(byteNumbers);
+                                    blob = new Blob([byteArray], { type: `image/${ext}` });
+                                  } else {
+                                    try {
+                                      const base64 = btoa(unescape(encodeURIComponent(activeFile.content)));
+                                      const byteCharacters = atob(base64);
+                                      const byteNumbers = new Array(byteCharacters.length);
+                                      for (let i = 0; i < byteCharacters.length; i++) {
+                                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                      }
+                                      const byteArray = new Uint8Array(byteNumbers);
+                                      blob = new Blob([byteArray], { type: `image/${ext}` });
+                                    } catch (e) {
+                                      blob = new Blob([activeFile.content]);
+                                    }
+                                  }
+                                } else {
+                                  blob = new Blob([activeFile.content]);
+                                }
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.setAttribute('download', activeFile.name);
+                                document.body.appendChild(link);
+                                link.click();
+                                link.parentNode.removeChild(link);
                               } catch (err) {
-                                jsonToast.error(err?.response?.data?.message || 'Failed to delete file');
+                                jsonToast.error('Failed to download file');
                               }
                             }}
-                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                            className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer border-b border-gray-100"
                           >
-                            <Trash2 size={12} />
-                            Delete file
+                            <Download size={12} />
+                            Download
                           </button>
+                          {isOwner && (
+                            <button
+                              onClick={async () => {
+                                setFileMenuOpen(false);
+                                try {
+                                  await apiClient.delete(`/repos/${owner}/${repo}/contents/${activeFilePath}?branch=${currentBranch}`);
+                                  jsonToast.success(`Deleted ${activeFile.name} successfully`);
+                                  handleCloseFile();
+                                  setTimeout(() => {
+                                    window.location.reload();
+                                  }, 500);
+                                } catch (err) {
+                                  jsonToast.error(err?.response?.data?.message || 'Failed to delete file');
+                                }
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                            >
+                              <Trash2 size={12} />
+                              Delete file
+                            </button>
+                          )}
                         </div>
                       </>
                     )}
@@ -459,30 +417,30 @@ export default function CodeTab({
                 {(() => {
                   const ext = activeFile.name.split('.').pop().toLowerCase();
                   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
-                  
+
                   if (isImage) {
                     // Try to guess if content is already base64, otherwise try to convert or use raw
                     const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
                     let imgSrc = '';
                     if (ext === 'svg') {
-                       imgSrc = `data:image/svg+xml;utf8,${encodeURIComponent(activeFile.content)}`;
+                      imgSrc = `data:image/svg+xml;utf8,${encodeURIComponent(activeFile.content)}`;
                     } else if (isLikelyBase64) {
-                       imgSrc = `data:image/${ext};base64,${activeFile.content}`;
+                      imgSrc = `data:image/${ext};base64,${activeFile.content}`;
                     } else {
-                       // if it was saved as raw binary string, btoa might fail on invalid characters.
-                       try {
-                         imgSrc = `data:image/${ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
-                       } catch (e) {
-                         // fallback to raw in case it magically works or just let it break with a broken image icon
-                         imgSrc = `data:image/${ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
-                       }
+                      // if it was saved as raw binary string, btoa might fail on invalid characters.
+                      try {
+                        imgSrc = `data:image/${ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
+                      } catch (e) {
+                        // fallback to raw in case it magically works or just let it break with a broken image icon
+                        imgSrc = `data:image/${ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
+                      }
                     }
 
                     return (
                       <div className="flex-1 flex items-center justify-center p-8 bg-[url('https://raw.githubusercontent.com/tannerlinsley/react-table/master/media/checkered.png')] bg-repeat">
-                        <img 
-                          src={imgSrc} 
-                          alt={activeFile.name} 
+                        <img
+                          src={imgSrc}
+                          alt={activeFile.name}
                           className="max-w-full max-h-[60vh] object-contain shadow-sm border border-gray-300 rounded bg-white"
                           onError={(e) => {
                             e.target.onerror = null;
@@ -522,9 +480,9 @@ export default function CodeTab({
               {treeData?.commit && (
                 <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between text-xs text-gray-700">
                   <div className="flex items-center gap-3">
-                    <img 
-                      src={treeData.commit.authorProfilePicture || defaultPfp} 
-                      alt={treeData.commit.author} 
+                    <img
+                      src={treeData.commit.authorProfilePicture || defaultPfp}
+                      alt={treeData.commit.author}
                       className="w-6 h-6 rounded-full border border-gray-300"
                     />
                     <span className="font-semibold text-gray-900">{treeData.commit.author}</span>
@@ -539,43 +497,62 @@ export default function CodeTab({
               )}
               <table className="w-full text-left text-xs">
                 <tbody className="divide-y divide-gray-100">
-                  {/* Up one directory if inside a folder */}
-                  {currentPath && (
-                    <tr
-                      onClick={() => handleBreadcrumbClick(pathSegments.length - 2)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
-                      <td colSpan={3} className="py-2.5 px-4 font-semibold text-gray-600 flex items-center gap-2">
-                        <Folder size={14} className="text-[#54aeff]" />
-                        <span className="group-hover:text-blue-600 group-hover:underline transition-colors mt-0.5">..</span>
-                      </td>
-                    </tr>
-                  )}
+                  {loadingTree ? (
+                    [...Array(5)].map((_, i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td className="py-2.5 px-4 flex items-center gap-2.5 w-[35%] sm:w-[40%]">
+                          <div className="w-4 h-4 bg-gray-200 rounded"></div>
+                          <div className="h-3.5 bg-gray-200 rounded w-1/2"></div>
+                        </td>
+                        <td className="py-2.5 px-4 hidden sm:table-cell w-[45%]">
+                          <div className="h-3.5 bg-gray-200 rounded w-3/4"></div>
+                        </td>
+                        <td className="py-2.5 px-4 text-right w-[15%]">
+                          <div className="h-3.5 bg-gray-200 rounded w-16 ml-auto"></div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <>
+                      {/* Up one directory if inside a folder */}
+                      {currentPath && (
+                        <tr
+                          onClick={() => handleBreadcrumbClick(pathSegments.length - 2)}
+                          className="hover:bg-gray-50 cursor-pointer transition-colors"
+                        >
+                          <td colSpan={3} className="py-2.5 px-4 font-semibold text-gray-600 flex items-center gap-2">
+                            <Folder size={14} className="text-[#54aeff]" />
+                            <span className="group-hover:text-blue-600 group-hover:underline transition-colors mt-0.5">..</span>
+                          </td>
+                        </tr>
+                      )}
 
-                  {treeData?.entries?.map((entry) => (
-                    <tr
-                      key={entry.name}
-                      onClick={() => handleEntryClick(entry)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors group"
-                    >
-                      <td className="py-2.5 px-4 font-medium text-gray-800 flex items-center gap-2.5 w-[35%] sm:w-[40%] truncate">
-                        {entry.object_type === 'tree' ? (
-                          <Folder size={15} className="text-[#54aeff] flex-shrink-0" />
-                        ) : (
-                          getFileIcon(entry.name)
-                        )}
-                        <span className="group-hover:text-blue-600 group-hover:underline transition-colors truncate">
-                          {entry.name}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4 text-gray-500 truncate w-[45%] hidden sm:table-cell">
-                         <span className="hover:text-blue-600 transition-colors cursor-pointer" title={entry.commit?.message || treeData.commit?.message || ''}>{entry.commit?.message || treeData.commit?.message || ''}</span>
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-gray-400 whitespace-nowrap w-[15%]">
-                        {timeAgo(entry.commit?.date || treeData.commit?.date)}
-                      </td>
-                    </tr>
-                  ))}
+                      {treeData?.entries?.map((entry) => (
+                        <tr
+                          key={entry.name}
+                          onClick={() => handleEntryClick(entry)}
+                          className="hover:bg-gray-50 cursor-pointer transition-colors group"
+                        >
+                          <td className="py-2.5 px-4 font-medium text-gray-800 flex items-center gap-2.5 w-[35%] sm:w-[40%] truncate">
+                            {entry.object_type === 'tree' ? (
+                              <Folder size={15} className="text-[#54aeff] flex-shrink-0" />
+                            ) : (
+                              getFileIcon(entry.name)
+                            )}
+                            <span className="group-hover:text-blue-600 group-hover:underline transition-colors truncate">
+                              {entry.name}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-gray-500 truncate w-[45%] hidden sm:table-cell">
+                            <span className="hover:text-blue-600 transition-colors cursor-pointer" title={entry.commit?.message || treeData.commit?.message || ''}>{entry.commit?.message || treeData.commit?.message || ''}</span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right text-gray-400 whitespace-nowrap w-[15%]">
+                            {timeAgo(entry.commit?.date || treeData.commit?.date)}
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -601,7 +578,7 @@ export default function CodeTab({
               <p className="text-sm text-gray-600 mb-4 leading-relaxed">
                 {repoData.description || <span className="italic text-gray-400">No description, website, or topics provided.</span>}
               </p>
-              
+
               <div className="space-y-3 text-sm text-gray-600">
                 <div className="flex items-center gap-2 hover:text-blue-600 cursor-pointer transition-colors">
                   <Star size={16} className="text-gray-400" />
@@ -628,10 +605,10 @@ export default function CodeTab({
               </h3>
               <div className="flex items-center gap-2 group">
                 <Link to={`/u/${repoData.owner?.username}`}>
-                  <img 
-                    src={repoData.owner?.profilePicture || defaultPfp} 
+                  <img
+                    src={repoData.owner?.profilePicture || defaultPfp}
                     alt={repoData.owner?.username}
-                    className="w-8 h-8 rounded-full border border-gray-200 shadow-sm group-hover:ring-2 ring-blue-500/20 transition-all" 
+                    className="w-8 h-8 rounded-full border border-gray-200 shadow-sm group-hover:ring-2 ring-blue-500/20 transition-all"
                   />
                 </Link>
                 <div className="flex flex-col">
@@ -646,7 +623,7 @@ export default function CodeTab({
             {(() => {
               const langs = calculateLanguages(rootTree);
               if (langs.length === 0) return null;
-              
+
               return (
                 <>
                   <div className="h-px bg-gray-200" />

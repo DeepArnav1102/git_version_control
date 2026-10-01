@@ -26,7 +26,19 @@ const otpLimiter = rateLimit({
     }
 });
 
+// Rate limiter for the global search endpoint — prevents DB hammering on every keystroke
+const searchLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 30,             // 30 searches per minute per IP is plenty for a human
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, next) => {
+        next(new ApiError(429, 'Too many search requests. Please slow down.'));
+    }
+});
+
 module.exports = {
     checkUsernameLimiter,
-    otpLimiter
+    otpLimiter,
+    searchLimiter
 };

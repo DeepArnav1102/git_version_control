@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookMarked, Globe, Lock, ArrowLeft, Loader2, ChevronDown } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { BookMarked, Globe, Lock, ArrowLeft, Loader2, ChevronDown, Check, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
 import useAuthStore from '../store/useAuthStore';
@@ -47,10 +47,78 @@ export default function CreateRepo() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const [focused, setFocused] = useState(false);
+
+  const criteria = [
+    { id: 'min_length', label: '3+ characters', regex: /.{3,}/ },
+    { id: 'max_length', label: 'Under 100 characters', regex: /^.{0,100}$/ },
+    { id: 'valid_chars', label: 'Letters, numbers, _, -', regex: /^[a-zA-Z0-9_-]+$/ },
+  ];
+
+  const getMet = (regex) => {
+    if (!name) return false;
+    if (regex.source === '^.{0,100}$') {
+      return name.length > 0 && name.length <= 100;
+    }
+    return regex.test(name);
+  };
+
+  const sortedCriteria = [...criteria].sort((a, b) => {
+    const aMet = getMet(a.regex);
+    const bMet = getMet(b.regex);
+    if (aMet === bMet) {
+      return criteria.indexOf(a) - criteria.indexOf(b);
+    }
+    return aMet ? -1 : 1; 
+  });
+  
+  const isValid = criteria.every(c => getMet(c.regex));
+
+  const [isAvailable, setIsAvailable] = useState(null);
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    if (!name || name.trim() === '') {
+      setIsAvailable(null);
+      return;
+    }
+    
+    if (!isValid) {
+      setIsAvailable(null);
+      return;
+    }
+
+    const checkName = async () => {
+      setIsChecking(true);
+      try {
+        const res = await apiClient.get(`/repos/check-availability?name=${name}`);
+        if (res.data?.success) {
+          setIsAvailable(res.data.available);
+        } else {
+          setIsAvailable(false);
+        }
+      } catch (err) {
+        setIsAvailable(false);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      checkName();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [name, isValid]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
       jsonToast.error('Please enter a repository name');
+      return;
+    }
+    if (!isValid) {
+      jsonToast.error('Please enter a valid repository name');
       return;
     }
 
@@ -129,17 +197,97 @@ export default function CreateRepo() {
 
               <span className="hidden sm:block text-gray-400 text-xl font-light mt-7">/</span>
 
-              <div className="flex-1 w-full">
+              <div className="flex-1 w-full relative">
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
                   Repository name *
                 </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  className="w-full px-3 py-1.5 h-9 text-sm bg-white border border-gray-300 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                />
+                <div className="relative w-full">
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    required
+                    className={`w-full px-3 py-1.5 h-9 text-sm bg-white border rounded-md outline-none transition-all pr-10
+                      ${!name 
+                        ? 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500' 
+                        : (isValid && isAvailable === false) || !isValid
+                          ? 'border-red-300 focus:ring-red-200'
+                          : isAvailable === true
+                            ? 'border-green-300 focus:ring-green-200' 
+                            : 'border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                      }`}
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    {isChecking && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
+                    {!isChecking && name && isValid && isAvailable === true && <Check className="w-4 h-4 text-green-500" />}
+                    {!isChecking && name && (!isValid || isAvailable === false) && <X className="w-4 h-4 text-red-500" />}
+                  </div>
+                </div>
+                
+                {isValid && isAvailable === false && !isChecking && (
+                  <p className="mt-1.5 text-xs text-red-600 font-medium">The repository {name} already exists on this account.</p>
+                )}
+                
+                <AnimatePresence>
+                  {(focused || (name && name.length > 0)) && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute left-0 top-[calc(100%+0.5rem)] w-full sm:w-64 bg-white border border-gray-100 shadow-xl rounded-xl p-4 z-50 pointer-events-none"
+                    >
+                      <div className="text-[10px] font-bold text-gray-400 mb-3 uppercase tracking-wider">
+                        Repository Name Rules
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {sortedCriteria.map((c) => {
+                          const met = getMet(c.regex);
+                          return (
+                            <motion.div
+                              layout
+                              key={c.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="flex items-center text-xs font-medium"
+                            >
+                              <motion.div
+                                animate={{ 
+                                  backgroundColor: met ? '#10b981' : '#f3f4f6',
+                                  borderColor: met ? '#10b981' : '#e5e7eb',
+                                }}
+                                className="w-4 h-4 rounded-full border flex items-center justify-center mr-2.5 shrink-0"
+                              >
+                                <motion.svg 
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: met ? 1 : 0 }}
+                                  className="w-2.5 h-2.5 text-white" 
+                                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                                >
+                                  <polyline points="20 6 9 17 4 12" />
+                                </motion.svg>
+                              </motion.div>
+                              <motion.span
+                                animate={{
+                                  color: met ? '#9ca3af' : '#111827',
+                                }}
+                                className="relative"
+                              >
+                                {c.label}
+                                <motion.span
+                                  initial={false}
+                                  animate={{ width: met ? '100%' : '0%' }}
+                                  className="absolute left-0 top-1/2 h-[1px] bg-gray-400 -translate-y-1/2"
+                                />
+                              </motion.span>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
             
@@ -255,7 +403,7 @@ export default function CreateRepo() {
         <motion.div className="flex justify-end pt-2" variants={itemVariants}>
           <button
             type="submit"
-            disabled={loading || !name.trim()}
+            disabled={loading || !name.trim() || !isValid || isAvailable === false || isChecking}
             className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-white bg-[#2da44e] hover:bg-[#2c974b] disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-all cursor-pointer"
           >
             {loading && <Loader2 size={14} className="animate-spin" />}

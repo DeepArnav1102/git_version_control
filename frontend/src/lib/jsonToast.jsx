@@ -75,6 +75,7 @@ export const jsonToast = {
               onConfirm();
             }} 
             className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+            data-toast-confirm="true"
           >
             {actionText}
           </button>

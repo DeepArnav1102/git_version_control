@@ -6,7 +6,24 @@ const User = require('../models/User.model');
 const mongoose = require('mongoose');
 const { generateAndSendOtp, verifyOtp } = require('../services/otp.service');
 const { resolveUser, resolveRepo } = require('../utils/repoHelpers');
+const checkRepoAvailability = asyncHandler(async (req, res) => {
+    const { name } = req.query;
+    if (!name || typeof name !== 'string') {
+        throw new ApiError(400, 'Repository name is required');
+    }
 
+    const cleanName = name.replace(/\.git$/, '').toLowerCase().trim();
+    if (!/^[a-zA-Z0-9_\-.]+$/.test(cleanName)) {
+        return res.status(200).json({ success: true, available: false, message: 'Invalid characters' });
+    }
+
+    const existing = await Repository.findOne({ owner: req.user._id, name: cleanName });
+    if (existing) {
+        return res.status(200).json({ success: true, available: false });
+    }
+
+    res.status(200).json({ success: true, available: true });
+});
 
 // ─── Create Repository ────────────────────────────────────────────────
 const createRepo = asyncHandler(async (req, res) => {
@@ -431,6 +448,7 @@ const syncRepo = asyncHandler(async (req, res) => {
 });
 
 module.exports = { 
+    checkRepoAvailability,
     createRepo, 
     updateRepo, 
     getUserRepos, 
