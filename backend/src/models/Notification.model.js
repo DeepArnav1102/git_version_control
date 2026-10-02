@@ -15,7 +15,7 @@ const notificationSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ['FOLLOW', 'STAR', 'FORK', 'MENTION', 'ASSIGNED', 'PARTICIPATING'],
+            enum: ['FOLLOW', 'STAR', 'FORK', 'MENTION', 'ASSIGNED', 'PARTICIPATING', 'REPO_INVITE'],
             required: true,
         },
         repo: {

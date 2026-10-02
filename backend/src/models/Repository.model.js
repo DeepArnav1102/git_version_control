@@ -79,6 +79,40 @@ const repositorySchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Repository',
             default: null
+        },
+        collaborators: [{
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            role: { type: String, enum: ['read', 'write', 'admin'], default: 'read' }
+        }],
+        pendingInvites: [{
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            role: { type: String, enum: ['read', 'write', 'admin'], default: 'read' },
+            createdAt: { type: Date, default: Date.now }
+        }],
+        topics: [{
+            type: String,
+            trim: true,
+            lowercase: true
+        }],
+        features: {
+            hasIssues: { type: Boolean, default: true },
+            hasPullRequests: { type: Boolean, default: true },
+            hasWiki: { type: Boolean, default: false }
+        },
+        branchProtection: [{
+            branchName: { type: String, required: true },
+            requireReviews: { type: Boolean, default: false },
+            preventDirectPushes: { type: Boolean, default: false }
+        }],
+        webhooks: [{
+            url: { type: String, required: true },
+            secret: { type: String },
+            events: [{ type: String }],
+            isActive: { type: Boolean, default: true }
+        }],
+        isArchived: {
+            type: Boolean,
+            default: false
         }
     },
     { timestamps: true }

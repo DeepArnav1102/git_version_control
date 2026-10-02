@@ -24,6 +24,9 @@ const {
     syncRepo,
     deleteRepoFile,
     downloadRepoZip,
+    inviteCollaborator,
+    acceptInvite,
+    removeCollaborator,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -69,6 +72,10 @@ router.get('/user/:username', protectOptional, getReposByUsername);
  *     tags: [Repositories]
  */
 router.get('/:owner/:repo', protectOptional, getRepoDetails);
+
+router.post('/:owner/:repo/collaborators/invite', protect, inviteCollaborator);
+router.post('/:owner/:repo/collaborators/accept', protect, acceptInvite);
+router.delete('/:owner/:repo/collaborators/:userId', protect, removeCollaborator);
 
 /**
  * @swagger

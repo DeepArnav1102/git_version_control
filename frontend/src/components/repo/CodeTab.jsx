@@ -601,22 +601,31 @@ export default function CodeTab({
             <div>
               <h3 className="font-semibold text-gray-900 mb-4 flex items-center justify-between">
                 Contributors
-                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">1</span>
+                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">
+                  {1 + (repoData.collaborators?.length || 0)}
+                </span>
               </h3>
-              <div className="flex items-center gap-2 group">
-                <Link to={`/u/${repoData.owner?.username}`}>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Owner */}
+                <Link to={`/u/${repoData.owner?.username}`} title={`Owner: ${repoData.owner?.username}`} className="group">
                   <img
                     src={repoData.owner?.profilePicture || defaultPfp}
+                    onError={(e) => { e.target.src = defaultPfp; }}
                     alt={repoData.owner?.username}
                     className="w-8 h-8 rounded-full border border-gray-200 shadow-sm group-hover:ring-2 ring-blue-500/20 transition-all"
                   />
                 </Link>
-                <div className="flex flex-col">
-                  <Link to={`/u/${repoData.owner?.username}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
-                    {repoData.owner?.username}
+                {/* Collaborators */}
+                {repoData.collaborators?.map(collab => (
+                  <Link key={collab.user?._id} to={`/u/${collab.user?.username}`} title={`${collab.role}: ${collab.user?.username}`} className="group">
+                    <img
+                      src={collab.user?.profilePicture || defaultPfp}
+                      onError={(e) => { e.target.src = defaultPfp; }}
+                      alt={collab.user?.username}
+                      className="w-8 h-8 rounded-full border border-gray-200 shadow-sm group-hover:ring-2 ring-blue-500/20 transition-all"
+                    />
                   </Link>
-                  <span className="text-[11px] text-gray-500">{repoData.owner?.name}</span>
-                </div>
+                ))}
               </div>
             </div>
 

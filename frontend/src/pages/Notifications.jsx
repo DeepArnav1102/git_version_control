@@ -218,6 +218,17 @@ export default function Notifications() {
     }
   };
 
+  const handleAcceptInvite = async (notification, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await apiClient.post(`/repos/${notification.repo?.owner?.username || notification.actor?.username}/${notification.repo?.name}/collaborators/accept`);
+      jsonToast.success('Invitation accepted!');
+      setNotifications(prev => prev.map(n => n._id === notification._id ? { ...n, isRead: true, type: 'INVITE_ACCEPTED' } : n));
+    } catch (err) {
+      jsonToast.error(err.response?.data?.message || 'Failed to accept invitation');
+    }
+  };
+
   const handleClearFilters = () => {
     setSearchQuery('');
     setTab('all');
@@ -738,8 +749,41 @@ export default function Notifications() {
                             </div>
                           )}
 
+                          {/* REPO_INVITE Notification */}
+                          {notification.type === 'REPO_INVITE' && (
+                            <div className="text-[14px] text-[#24292f] mt-0.5">
+                              <span className="font-semibold">{notification.actor?.username}</span> invited you to collaborate on{' '}
+                              <Link 
+                                to={`/repo/${notification.repo?.owner?.username || notification.actor?.username}/${notification.repo?.name}`}
+                                className="font-semibold text-[#0969da] hover:underline"
+                              >
+                                {notification.repo?.owner?.username || notification.actor?.username}/{notification.repo?.name}
+                              </Link>.
+                              <div className="mt-2 mb-1">
+                                <button 
+                                  onClick={(e) => handleAcceptInvite(notification, e)}
+                                  className="px-3 py-1 bg-[#2da44e] text-white text-[12px] font-semibold rounded hover:bg-[#2c974b] transition-colors border border-[rgba(27,31,36,0.15)] shadow-sm"
+                                >
+                                  Accept Invitation
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {notification.type === 'INVITE_ACCEPTED' && (
+                            <div className="text-[14px] text-[#24292f] mt-0.5">
+                              You accepted the invitation to collaborate on{' '}
+                              <Link 
+                                to={`/repo/${notification.repo?.owner?.username || notification.actor?.username}/${notification.repo?.name}`}
+                                className="font-semibold text-[#0969da] hover:underline"
+                              >
+                                {notification.repo?.owner?.username || notification.actor?.username}/{notification.repo?.name}
+                              </Link>.
+                            </div>
+                          )}
+
                           {/* Other / Generic Notification */}
-                          {notification.type !== 'FOLLOW' && notification.type !== 'STAR' && (
+                          {notification.type !== 'FOLLOW' && notification.type !== 'STAR' && notification.type !== 'REPO_INVITE' && notification.type !== 'INVITE_ACCEPTED' && (
                             <div className="text-[14px] text-[#24292f] mt-0.5">
                               <Link 
                                 to={`/u/${notification.actor?.username}`} 
