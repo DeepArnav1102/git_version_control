@@ -20,7 +20,7 @@ const gitObjectSchema = new mongoose.Schema(
         },
         data: {
             type: String,
-            required: true,
+            default: '',
         },
         pushedBy: {
             type: mongoose.Schema.Types.ObjectId,

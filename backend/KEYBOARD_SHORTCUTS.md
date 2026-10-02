@@ -15,6 +15,7 @@ A complete reference of all planned keyboard shortcuts for the app.
 | `G` → `S` | Go to Profile Settings |
 | `G` → `R` | Go to Repositories tab |
 | `G` → `I` | Go to IDE / Codespace |
+| `G` → `B` | Go to Notifications (Bell) |
 
 ---
 

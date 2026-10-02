@@ -20,6 +20,7 @@ const Profile        = lazy(() => import('./pages/Profile'));
 const IDE            = lazy(() => import('./pages/IDE'));
 const CreateRepo     = lazy(() => import('./pages/CreateRepo'));
 const RepoDetail     = lazy(() => import('./pages/RepoDetail'));
+const Notifications  = lazy(() => import('./pages/Notifications'));
 
 const PageFallback = () => (
   <div className="flex items-center justify-center w-full h-full py-20">
@@ -98,6 +99,13 @@ function App() {
         <Route path="/ide" element={
           <Suspense fallback={<PageFallback />}>
             <IDE />
+          </Suspense>
+        } />
+        <Route path="/notifications" element={
+          <Suspense fallback={<PageFallback />}>
+            <MainLayout>
+              <Notifications />
+            </MainLayout>
           </Suspense>
         } />
         <Route path="/new/repository" element={

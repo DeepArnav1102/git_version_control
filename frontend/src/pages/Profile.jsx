@@ -221,7 +221,27 @@ export default function Profile() {
             transition={{ duration: 0.3 }}
             className="w-full"
           >
-            {user?.starredRepos && user.starredRepos.length > 0 ? (
+            {isLoadingProfile || !user ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between min-h-[140px]">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+                        <div className="w-32 h-4 bg-gray-200 rounded animate-pulse" />
+                        <div className="w-12 h-4 bg-gray-100 rounded-full animate-pulse ml-1" />
+                      </div>
+                      <div className="w-full h-3 bg-gray-100 rounded animate-pulse mb-2" />
+                      <div className="w-2/3 h-3 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                    <div className="mt-4 flex items-center gap-4">
+                      <div className="w-16 h-3 bg-gray-200 rounded animate-pulse" />
+                      <div className="w-10 h-3 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : user?.starredRepos && user.starredRepos.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {user.starredRepos.map((repo) => (
                   <div key={repo._id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">

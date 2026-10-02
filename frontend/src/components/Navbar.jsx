@@ -27,6 +27,7 @@ export default function Navbar() {
   const { user } = useAuthStore();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
 
   // ── Search state ────────────────────────────────────────────────────
@@ -77,6 +78,22 @@ export default function Navbar() {
       window.removeEventListener('toggle-shortcuts-modal', handleToggleShortcuts);
     };
   }, []);
+
+  // ── Fetch unread notifications count ────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await apiClient.get('/notifications/unread-count');
+        setUnreadCount(res.data.data?.count || 0);
+      } catch (err) {}
+    };
+    fetchUnreadCount();
+    
+    // Poll every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // ── Reset activeIdx when results change ─────────────────────────────
   useEffect(() => { setActiveIdx(-1); }, [results]);
@@ -349,7 +366,12 @@ export default function Navbar() {
             </div>
           </ShortcutBadge>
 
-          <LottieIcon src={notificationAnim} trigger="hover" />
+          <div className="relative" title="Notifications">
+            <LottieIcon src={notificationAnim} trigger="hover" onClick={() => navigate('/notifications')} />
+            {unreadCount > 0 && (
+              <div className="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-full border-2 border-white translate-x-1 -translate-y-1" />
+            )}
+          </div>
 
           {/* Profile */}
           <ProfileDropdown />
