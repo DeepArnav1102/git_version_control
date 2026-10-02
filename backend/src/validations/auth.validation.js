@@ -16,8 +16,15 @@ const loginSchema = z.object({
 
 const cliLoginSchema = z.object({
     body: z.object({
-        email: z.string().email('Invalid email address'),
-        pat: z.string().startsWith('git_pat_', 'Invalid Personal Access Token format'),
+        email: z.string().trim().email('Invalid email address'),
+        pat: z.string().trim().optional(),
+        token: z.string().trim().optional(),
+    }).refine((data) => {
+        const val = data.pat || data.token;
+        return typeof val === 'string' && val.startsWith('git_pat_');
+    }, {
+        message: 'Invalid Personal Access Token format (must start with "git_pat_")',
+        path: ['pat'],
     }),
 });
 

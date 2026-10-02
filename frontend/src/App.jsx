@@ -1,8 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+import useAuthStore from './store/useAuthStore';
 import AuthLayout from './components/AuthLayout';
 import MainLayout from './components/MainLayout';
+import TopLoader from './components/TopLoader';
+import useGlobalShortcuts from './hooks/useGlobalShortcuts';
 import { Lottie } from 'lottie-react';
 import loadingAnimation from './assets/Loading V2/loadingV2.json';
 
@@ -17,6 +20,7 @@ const Profile        = lazy(() => import('./pages/Profile'));
 const IDE            = lazy(() => import('./pages/IDE'));
 const CreateRepo     = lazy(() => import('./pages/CreateRepo'));
 const RepoDetail     = lazy(() => import('./pages/RepoDetail'));
+const Notifications  = lazy(() => import('./pages/Notifications'));
 
 const PageFallback = () => (
   <div className="flex items-center justify-center w-full h-full py-20">
@@ -28,6 +32,12 @@ const PageFallback = () => (
     />
   </div>
 );
+
+// Mounts the global keyboard shortcuts hook inside Router (needs useNavigate)
+function GlobalShortcuts() {
+  useGlobalShortcuts();
+  return null;
+}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -47,8 +57,18 @@ function AnimatedRoutes() {
 }
 
 function App() {
+  const initializeAuth = useAuthStore((state) => state.initializeAuth);
+
+  // Bootstrap auth once on mount — handles the access token refresh
+  // automatically via the axios interceptor if only a refreshToken cookie exists.
+  useEffect(() => {
+    initializeAuth();
+  }, [initializeAuth]);
+
   return (
     <Router>
+      <TopLoader />
+      <GlobalShortcuts />
       <Routes>
         <Route path="/onboarding" element={
           <Suspense fallback={<PageFallback />}>
@@ -79,6 +99,13 @@ function App() {
         <Route path="/ide" element={
           <Suspense fallback={<PageFallback />}>
             <IDE />
+          </Suspense>
+        } />
+        <Route path="/notifications" element={
+          <Suspense fallback={<PageFallback />}>
+            <MainLayout>
+              <Notifications />
+            </MainLayout>
           </Suspense>
         } />
         <Route path="/new/repository" element={

@@ -1,6 +1,7 @@
 const express = require('express');
-const { protect } = require('../middlewares/auth.middleware');
+const { protect, protectOptional } = require('../middlewares/auth.middleware');
 const {
+    checkRepoAvailability,
     createRepo,
     updateRepo,
     getUserRepos,
@@ -12,11 +13,15 @@ const {
     checkObjectExists,
     storeObject,
     updateRef,
+    getRemoteRef,
+    getObject,
     requestDeleteOtp,
     deleteRepo,
     toggleStarRepo,
     forkRepo,
     syncRepo,
+    deleteRepoFile,
+    downloadRepoZip,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
 
@@ -31,6 +36,7 @@ const router = express.Router();
  *     summary: Create a new repository
  *     tags: [Repositories]
  */
+router.get('/check-availability', protect, checkRepoAvailability);
 router.post('/', protect, createRepo);
 
 /**
@@ -49,7 +55,7 @@ router.get('/', protect, getUserRepos);
  *     summary: Get repositories for a specific user
  *     tags: [Repositories]
  */
-router.get('/user/:username', getReposByUsername);
+router.get('/user/:username', protectOptional, getReposByUsername);
 
 // ─── Single Repo Routes ───────────────────────────────────────────────
 
@@ -60,7 +66,7 @@ router.get('/user/:username', getReposByUsername);
  *     summary: Get repository details
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo', getRepoDetails);
+router.get('/:owner/:repo', protectOptional, getRepoDetails);
 
 /**
  * @swagger
@@ -123,7 +129,7 @@ router.post('/:owner/:repo/sync', protect, syncRepo);
  *     summary: Get the repository file tree for the default branch
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/tree', getRepoTree);
+router.get('/:owner/:repo/tree', protectOptional, getRepoTree);
 
 /**
  * @swagger
@@ -132,7 +138,16 @@ router.get('/:owner/:repo/tree', getRepoTree);
  *     summary: Get the repository file tree for a specific reference
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/tree/:ref', getRepoTree);
+router.get('/:owner/:repo/tree/:ref', protectOptional, getRepoTree);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/zip/{ref}:
+ *   get:
+ *     summary: Download the repository as a zip file
+ *     tags: [Repositories]
+ */
+router.get('/:owner/:repo/zip/:ref', protectOptional, downloadRepoZip);
 
 /**
  * @swagger
@@ -141,7 +156,7 @@ router.get('/:owner/:repo/tree/:ref', getRepoTree);
  *     summary: Get a repository blob by hash
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/blob/:hash', getRepoBlob);
+router.get('/:owner/:repo/blob/:hash', protectOptional, getRepoBlob);
 
 /**
  * @swagger
@@ -150,7 +165,7 @@ router.get('/:owner/:repo/blob/:hash', getRepoBlob);
  *     summary: Get commits for the default branch
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/commits', getRepoCommits);
+router.get('/:owner/:repo/commits', protectOptional, getRepoCommits);
 
 /**
  * @swagger
@@ -159,7 +174,16 @@ router.get('/:owner/:repo/commits', getRepoCommits);
  *     summary: Get commits for a specific reference
  *     tags: [Repositories]
  */
-router.get('/:owner/:repo/commits/:ref', getRepoCommits);
+router.get('/:owner/:repo/commits/:ref', protectOptional, getRepoCommits);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/contents/*:
+ *   delete:
+ *     summary: Delete a file from the repository
+ *     tags: [Repositories]
+ */
+router.delete('/:owner/:repo/contents/*filePath', protect, deleteRepoFile);
 
 // ─── CLI Push Endpoints (Full path: :owner/:repo) ──────────────────────
 
@@ -190,7 +214,27 @@ router.post('/:owner/:repo/objects', protect, storeObject);
  */
 router.post('/:owner/:repo/refs', protect, updateRef);
 
-// ─── CLI Push Endpoints (Short path: :repo) ───────────────────────────
+// ─── CLI Fetch Endpoints (Full path: :owner/:repo) ────────────────────
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs/{branch}:
+ *   get:
+ *     summary: Get a remote branch reference (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/refs/:branch', protect, getRemoteRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/objects/{hash}:
+ *   get:
+ *     summary: Download a git object (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/objects/:hash', protect, getObject);
+
+// ─── CLI Push / Fetch Endpoints (Short path: :repo) ───────────────────
 
 /**
  * @swagger
@@ -218,5 +262,23 @@ router.post('/:repo/objects', protect, storeObject);
  *     tags: [CLI]
  */
 router.post('/:repo/refs', protect, updateRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/refs/{branch}:
+ *   get:
+ *     summary: Get a remote branch reference (CLI fetch, Short path)
+ *     tags: [CLI]
+ */
+router.get('/:repo/refs/:branch', protect, getRemoteRef);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/objects/{hash}:
+ *   get:
+ *     summary: Download a git object (CLI fetch, Short path)
+ *     tags: [CLI]
+ */
+router.get('/:repo/objects/:hash', protect, getObject);
 
 module.exports = router;

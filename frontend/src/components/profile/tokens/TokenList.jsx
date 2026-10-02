@@ -30,8 +30,19 @@ export default function TokenList({ tokens, loading, onGenerateClick, onRevoke }
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 flex-1">
-          <Lottie src={loadingAnimation} autoplay loop style={{ width: 40, height: 40, filter: 'brightness(0) invert(0)' }} />
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg">
+              <div className="space-y-2">
+                <div className="w-32 h-4 bg-gray-200 rounded animate-pulse" />
+                <div className="w-24 h-3 bg-gray-100 rounded animate-pulse" />
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-5 bg-gray-100 rounded-full animate-pulse" />
+                <div className="w-7 h-7 bg-gray-100 rounded-md animate-pulse" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : tokens.length === 0 ? (
         <div className="text-center py-16 flex-1 flex flex-col justify-center">

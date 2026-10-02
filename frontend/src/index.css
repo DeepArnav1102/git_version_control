@@ -30,3 +30,20 @@ html, body {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+/* ── NProgress Top Loader ─────────────────────────────────────── */
+#nprogress .bar {
+  background: #22c55e !important;
+  height: 2.5px !important;
+  box-shadow: 0 0 8px #22c55e, 0 0 3px #22c55e !important;
+}
+
+/* Remove the default peg (bright dot at the end of the bar) */
+#nprogress .peg {
+  box-shadow: 0 0 10px #22c55e, 0 0 5px #22c55e !important;
+}
+
+/* Hide the spinner entirely (already set in JS, this is a CSS safety net) */
+#nprogress .spinner {
+  display: none !important;
+}

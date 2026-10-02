@@ -113,7 +113,12 @@ export default function TopRepos() {
       {/* Repo list */}
       <div className="flex flex-col gap-0.5">
         {loading ? (
-          <div className="py-4 text-center text-xs text-gray-400">Loading repos...</div>
+          <div className="py-2 px-3 space-y-3">
+             <div className="h-6 w-full bg-gray-200 rounded animate-pulse"></div>
+             <div className="h-6 w-full bg-gray-200 rounded animate-pulse"></div>
+             <div className="h-6 w-full bg-gray-200 rounded animate-pulse"></div>
+             <div className="h-6 w-full bg-gray-200 rounded animate-pulse"></div>
+          </div>
         ) : filteredRepos.length > 0 ? (
           filteredRepos.map((repo, i) => (
             <RepoRow

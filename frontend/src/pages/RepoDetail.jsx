@@ -44,6 +44,8 @@ import RepoHeader from '../components/repo/RepoHeader';
 import CommitsTab from '../components/repo/CommitsTab';
 import SettingsTab from '../components/repo/SettingsTab';
 import CodeTab from '../components/repo/CodeTab';
+import { calculateLanguages } from '../utils/languageUtils';
+import useRepoShortcuts from '../hooks/useRepoShortcuts';
 
 export default function RepoDetail() {
   const { owner, repo } = useParams();
@@ -70,6 +72,7 @@ export default function RepoDetail() {
   const [loading, setLoading] = useState(true);
   const [loadingFile, setLoadingFile] = useState(false);
   const [loadingTree, setLoadingTree] = useState(false);
+  const [loadingCodespace, setLoadingCodespace] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [deleteOtp, setDeleteOtp] = useState('');
@@ -88,11 +91,17 @@ export default function RepoDetail() {
   const remoteUrl = `${apiBase}/repos/${owner}/${repo}`;
 
   useEffect(() => {
-    const nextTab = tabParam || 'code';
+    let nextTab = tabParam || 'code';
+    
+    // Prevent non-owners from accessing settings tab
+    if (nextTab === 'settings' && !isOwner) {
+      nextTab = 'code';
+    }
+
     if (nextTab !== activeTab) {
       setActiveTab(nextTab);
     }
-  }, [tabParam, activeTab]);
+  }, [tabParam, activeTab, isOwner]);
 
   useEffect(() => {
     if (repoData) {
@@ -129,7 +138,7 @@ export default function RepoDetail() {
       setUpdatingSettings(true);
       const res = await apiClient.patch(`/repos/${owner}/${repo}`, repoSettings);
       jsonToast.success('Settings updated successfully');
-      
+
       if (res.data.data.name !== repo) {
         navigate(`/repo/${owner}/${res.data.data.name}?tab=settings`);
       } else {
@@ -156,7 +165,7 @@ export default function RepoDetail() {
       }
       newPinned = [...(user.pinnedRepos?.map(r => r._id || r) || []), repoData._id];
     }
-    
+
     try {
       const res = await apiClient.put('/users/pinned', { pinnedRepos: newPinned });
       setUser({ ...user, pinnedRepos: res.data.data.pinnedRepos });
@@ -172,17 +181,17 @@ export default function RepoDetail() {
     if (!user) return;
     try {
       const res = await apiClient.post(`/repos/${owner}/${repo}/star`);
-      
+
       // Update local repo data
       setRepoData(prev => ({ ...prev, starsCount: res.data.data.starsCount }));
-      
+
       // Update user starredRepos list locally
       if (res.data.data.isStarred) {
         setUser({ ...user, starredRepos: [...(user.starredRepos || []), repoData] });
       } else {
         setUser({ ...user, starredRepos: (user.starredRepos || []).filter(r => (r._id || r) !== repoData._id) });
       }
-      
+
       jsonToast.success(res.data.message);
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Failed to toggle star');
@@ -248,6 +257,41 @@ export default function RepoDetail() {
     }
   };
 
+  const handleDownloadZip = async () => {
+    try {
+      jsonToast.success('Preparing ZIP download...');
+      const response = await apiClient.get(`/repos/${owner}/${repo}/zip/${currentBranch}`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${repo}-${currentBranch}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (err) {
+      jsonToast.error('Failed to download ZIP');
+    }
+  };
+
+  const handleOpenRepoInCodespace = async () => {
+    try {
+      setLoadingCodespace(true);
+      await apiClient.post('/ide/load-codespace', { type: 'repo', owner, repo });
+      jsonToast.success('Codespace ready!');
+      navigate('/ide');
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
+      setLoadingCodespace(false);
+    }
+  };
+
+  const isRepo100PercentPython = React.useMemo(() => {
+    const langs = calculateLanguages(rootTree);
+    return langs.length === 1 && langs[0].name === 'Python';
+  }, [rootTree]);
+
   // Helper to toggle folder expand/collapse in sidebar
   const toggleFolder = useCallback((folderPath) => {
     setExpandedPaths((prev) => {
@@ -287,10 +331,11 @@ export default function RepoDetail() {
       }
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Failed to load repository');
+      navigate('/');
     } finally {
       setLoading(false);
     }
-  }, [owner, repo]);
+  }, [owner, repo, navigate]);
 
   // 2. Fetch File Tree
   const fetchTree = useCallback(async (branch, path = '') => {
@@ -468,13 +513,100 @@ export default function RepoDetail() {
     jsonToast.success('Copied to clipboard!');
   }, []);
 
+  useRepoShortcuts({
+    onFocusTreeFilter: () => {
+      if (activeTab === 'code') {
+        const input = document.querySelector('[data-tree-filter]');
+        if (input) input.focus();
+      }
+    },
+    onToggleSidebar: () => setSidebarOpen(prev => !prev),
+    onSwitchToCode: () => handleTabChange('code'),
+    onSwitchToCommits: () => handleTabChange('commits'),
+    onSwitchToSettings: () => { if (isOwner) handleTabChange('settings'); },
+    onFocusBranchSelector: () => {
+      const select = document.querySelector('[data-branch-selector]');
+      if (select) select.focus();
+    },
+    onToggleStar: handleToggleStar,
+    onFork: handleFork,
+    onCopyCloneUrl: () => {
+      navigator.clipboard.writeText(remoteUrl);
+      setCopiedClone(true);
+      setTimeout(() => setCopiedClone(false), 2000);
+      jsonToast.success('Clone URL copied');
+    },
+    onTogglePin: handlePinToggle,
+    onDownloadZip: handleDownloadZip,
+    onOpenInCodespace: handleOpenRepoInCodespace,
+    onCloseFile: handleCloseFile,
+    onCopyFilePermalink: () => {
+      if (activeFile) {
+        const permalink = `${window.location.origin}/repo/${owner}/${repo}?tab=code&branch=${currentBranch}&path=${activeFile.path}`;
+        navigator.clipboard.writeText(permalink);
+        jsonToast.success('Permalink copied');
+      }
+    },
+    onCopyRawFileContent: () => {
+      if (activeFile && activeFile.content) {
+        navigator.clipboard.writeText(activeFile.content);
+        jsonToast.success('File content copied');
+      }
+    },
+    onNavigateUp: () => {
+      if (!currentPath && !activeFile) return;
+      
+      if (activeFile) {
+        // If viewing a file, go back to the directory containing it
+        handleCloseFile();
+      } else {
+        // If in a directory, go up one level
+        const parts = currentPath.split('/');
+        parts.pop();
+        const nextPath = parts.join('/');
+        fetchTree(currentBranch, nextPath);
+        setCurrentPath(nextPath);
+        autoExpandParents(nextPath);
+      }
+    },
+    onNavigateInto: () => {
+      // Future implementation: if there's keyboard selection, enter the selected folder.
+      // For now, this is a placeholder.
+      jsonToast.error("Keyboard directory selection coming soon");
+    }
+  });
+
   const pathSegments = currentPath ? currentPath.split('/') : [];
 
   if (loading || !treeData) {
     return (
-      <div className="max-w-6xl mx-auto px-4 py-16 flex flex-col items-center justify-center min-h-[400px]">
-        <div className="w-8 h-8 border-3 border-gray-300 border-t-gray-800 rounded-full animate-spin mb-3" />
-        <p className="text-sm text-gray-500 font-medium">Loading repository...</p>
+      <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-8 font-sans flex flex-col md:flex-row gap-6">
+        <div className="flex-1 min-w-0">
+          <div className="mb-6 h-10 w-64 md:w-80 bg-gray-200 rounded animate-pulse"></div>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="h-8 w-24 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-8 w-24 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-8 w-24 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+             <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+               <div className="h-5 w-48 bg-gray-200 rounded animate-pulse"></div>
+             </div>
+             <div className="p-4 space-y-3">
+                <div className="h-8 w-full bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-8 w-full bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-8 w-full bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-8 w-full bg-gray-200 rounded animate-pulse"></div>
+             </div>
+          </div>
+        </div>
+        {/* Sidebar Skeleton */}
+        <div className="w-full md:w-72 lg:w-80 flex-shrink-0 flex flex-col gap-6">
+           <div>
+              <div className="h-5 w-24 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="h-16 w-full bg-gray-200 rounded animate-pulse"></div>
+           </div>
+        </div>
       </div>
     );
   }
@@ -497,7 +629,7 @@ export default function RepoDetail() {
   const isEmpty = treeData.isEmpty;
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -15 }}
@@ -523,6 +655,10 @@ export default function RepoDetail() {
         handleToggleStar={handleToggleStar}
         handleFork={handleFork}
         handleSync={handleSync}
+        handleDownloadZip={handleDownloadZip}
+        handleOpenRepoInCodespace={handleOpenRepoInCodespace}
+        loadingCodespace={loadingCodespace}
+        isRepo100PercentPython={isRepo100PercentPython}
         currentUser={user}
       />
 
@@ -530,17 +666,15 @@ export default function RepoDetail() {
       <div className="flex items-center gap-6 border-b border-gray-200 mb-6 px-1">
         <button
           onClick={() => handleTabChange('code')}
-          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
-            activeTab === 'code' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'code' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
         >
           <Code size={16} /> Code
         </button>
         <button
           onClick={() => handleTabChange('commits')}
-          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
-            activeTab === 'commits' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
+          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'commits' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
         >
           <History size={16} /> Commits
           <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs ml-1">{commits.length}</span>
@@ -548,9 +682,8 @@ export default function RepoDetail() {
         {isOwner && (
           <button
             onClick={() => handleTabChange('settings')}
-            className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'settings' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'settings' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
           >
             <Settings size={16} /> Settings
           </button>
@@ -566,38 +699,39 @@ export default function RepoDetail() {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2 }}
           >
-          
-          <CodeTab
-            isEmpty={isEmpty}
-            repoData={repoData}
-            remoteUrl={remoteUrl}
-            copyToClipboard={copyToClipboard}
-            treeData={treeData}
-            sidebarOpen={sidebarOpen}
-            setSidebarOpen={setSidebarOpen}
-            treeFilter={treeFilter}
-            setTreeFilter={setTreeFilter}
-            rootTree={rootTree}
-            owner={owner}
-            repo={repo}
-            currentBranch={currentBranch}
-            expandedPaths={expandedPaths}
-            toggleFolder={toggleFolder}
-            handleSidebarFileClick={handleSidebarFileClick}
-            handleSidebarFolderClick={handleSidebarFolderClick}
-            activeFilePath={activeFilePath}
-            currentPath={currentPath}
-            pathSegments={pathSegments}
-            handleBreadcrumbClick={handleBreadcrumbClick}
-            activeFile={activeFile}
-            copiedFile={copiedFile}
-            handleCloseFile={handleCloseFile}
-            handleEntryClick={handleEntryClick}
-            loadingFile={loadingFile}
-            loadingTree={loadingTree}
-          />
-        </motion.div>
-      )}
+
+            <CodeTab
+              isEmpty={isEmpty}
+              repoData={repoData}
+              remoteUrl={remoteUrl}
+              copyToClipboard={copyToClipboard}
+              treeData={treeData}
+              sidebarOpen={sidebarOpen}
+              setSidebarOpen={setSidebarOpen}
+              treeFilter={treeFilter}
+              setTreeFilter={setTreeFilter}
+              rootTree={rootTree}
+              owner={owner}
+              repo={repo}
+              currentBranch={currentBranch}
+              expandedPaths={expandedPaths}
+              toggleFolder={toggleFolder}
+              handleSidebarFileClick={handleSidebarFileClick}
+              handleSidebarFolderClick={handleSidebarFolderClick}
+              activeFilePath={activeFilePath}
+              currentPath={currentPath}
+              pathSegments={pathSegments}
+              handleBreadcrumbClick={handleBreadcrumbClick}
+              activeFile={activeFile}
+              copiedFile={copiedFile}
+              handleCloseFile={handleCloseFile}
+              handleEntryClick={handleEntryClick}
+              loadingFile={loadingFile}
+              loadingTree={loadingTree}
+              isOwner={isOwner}
+            />
+          </motion.div>
+        )}
 
         {activeTab === 'pull-requests' && (
           <motion.div
@@ -608,11 +742,11 @@ export default function RepoDetail() {
             transition={{ duration: 0.2 }}
             className="mt-6 bg-white border border-gray-200 rounded-xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[300px]"
           >
-          <GitPullRequest size={32} className="text-gray-300 mb-3" />
-          <h3 className="text-lg font-bold text-gray-800">No pull requests yet</h3>
-          <p className="text-sm text-gray-500 mt-1">Welcome to pull requests!</p>
-        </motion.div>
-      )}
+            <GitPullRequest size={32} className="text-gray-300 mb-3" />
+            <h3 className="text-lg font-bold text-gray-800">No pull requests yet</h3>
+            <p className="text-sm text-gray-500 mt-1">Welcome to pull requests!</p>
+          </motion.div>
+        )}
 
         {activeTab === 'issues' && (
           <motion.div

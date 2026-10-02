@@ -6,6 +6,7 @@ import { Play, TerminalSquare, FolderGit2, PanelLeft, PanelBottom } from 'lucide
 import axios from 'axios';
 
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
+import useIdeShortcuts from '../hooks/useIdeShortcuts';
 
 export default function IDE() {
   const [fileTree, setFileTree] = useState([]);
@@ -164,6 +165,15 @@ export default function IDE() {
       setIsRunning(false);
     }
   };
+
+  useIdeShortcuts({
+    onSave: () => saveCurrentFile(),
+    onToggleTerminal: () => setShowTerminal(prev => !prev),
+    onToggleSidebar: () => setShowSidebar(prev => !prev),
+    onEscape: () => {
+       if (activeFile) setActiveFile(null);
+    }
+  });
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-gray-800 font-sans overflow-hidden">

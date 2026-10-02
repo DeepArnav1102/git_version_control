@@ -3,10 +3,28 @@ const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
+const Notification = require('../models/Notification.model');
 const mongoose = require('mongoose');
 const { generateAndSendOtp, verifyOtp } = require('../services/otp.service');
 const { resolveUser, resolveRepo } = require('../utils/repoHelpers');
+const checkRepoAvailability = asyncHandler(async (req, res) => {
+    const { name } = req.query;
+    if (!name || typeof name !== 'string') {
+        throw new ApiError(400, 'Repository name is required');
+    }
 
+    const cleanName = name.replace(/\.git$/, '').toLowerCase().trim();
+    if (!/^[a-zA-Z0-9_\-.]+$/.test(cleanName)) {
+        return res.status(200).json({ success: true, available: false, message: 'Invalid characters' });
+    }
+
+    const existing = await Repository.findOne({ owner: req.user._id, name: cleanName });
+    if (existing) {
+        return res.status(200).json({ success: true, available: false });
+    }
+
+    res.status(200).json({ success: true, available: true });
+});
 
 // ─── Create Repository ────────────────────────────────────────────────
 const createRepo = asyncHandler(async (req, res) => {
@@ -180,7 +198,7 @@ const getRepoDetails = asyncHandler(async (req, res) => {
                 while (currP) {
                     parentAncestors.add(currP);
                     const c = commitMap.get(currP);
-                    currP = c && c.parent ? c.parent : null;
+                    currP = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
 
                 let currF = forkHash;
@@ -192,14 +210,14 @@ const getRepoDetails = asyncHandler(async (req, res) => {
                     }
                     ahead++;
                     const c = commitMap.get(currF);
-                    currF = c && c.parent ? c.parent : null;
+                    currF = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
 
                 currP = parentHash;
                 while (currP && currP !== commonAncestor) {
                     behind++;
                     const c = commitMap.get(currP);
-                    currP = c && c.parent ? c.parent : null;
+                    currP = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
             }
         }
@@ -292,9 +310,23 @@ const toggleStarRepo = asyncHandler(async (req, res) => {
     if (isStarred) {
         currentUser.starredRepos.pull(repoDoc._id);
         repoDoc.starsCount = Math.max(0, (repoDoc.starsCount || 0) - 1);
+        await Notification.findOneAndDelete({
+            recipient: repoDoc.owner,
+            actor: req.user._id,
+            type: 'STAR',
+            repo: repoDoc._id,
+        }).catch(err => console.error("Notification delete error:", err));
     } else {
         currentUser.starredRepos.push(repoDoc._id);
         repoDoc.starsCount = (repoDoc.starsCount || 0) + 1;
+        if (repoDoc.owner.toString() !== req.user._id.toString()) {
+            await Notification.create({
+                recipient: repoDoc.owner,
+                actor: req.user._id,
+                type: 'STAR',
+                repo: repoDoc._id,
+            }).catch(err => console.error("Notification create error:", err));
+        }
     }
 
     await currentUser.save();
@@ -350,7 +382,7 @@ const forkRepo = asyncHandler(async (req, res) => {
     await sourceRepo.save();
 
     // Copy all GitObjects from source to the new fork
-    const sourceObjects = await GitObject.find({ repositoryId: sourceRepo._id });
+    const sourceObjects = await GitObject.find({ repositoryId: sourceRepo._id }).lean();
     if (sourceObjects.length > 0) {
         const newObjects = sourceObjects.map(obj => ({
             repositoryId: forkedRepo._id,
@@ -388,19 +420,28 @@ const syncRepo = asyncHandler(async (req, res) => {
     }
 
     // Fast-forward sync: copy missing objects from parent to fork
-    const parentObjects = await GitObject.find({ repositoryId: parentRepo._id });
-    const forkObjects = await GitObject.find({ repositoryId: forkedRepo._id }, { hash: 1 });
-    const forkHashes = new Set(forkObjects.map(o => o.hash));
+    // Fetch only the hashes to save memory
+    const parentHashesDocs = await GitObject.find({ repositoryId: parentRepo._id }, { hash: 1 }).lean();
+    const forkHashesDocs = await GitObject.find({ repositoryId: forkedRepo._id }, { hash: 1 }).lean();
     
-    const objectsToCopy = parentObjects.filter(o => !forkHashes.has(o.hash)).map(o => ({
-        repositoryId: forkedRepo._id,
-        hash: o.hash,
-        type: o.type,
-        data: o.data,
-        pushedBy: req.user._id
-    }));
+    const forkHashes = new Set(forkHashesDocs.map(o => o.hash));
+    const missingHashes = parentHashesDocs.map(o => o.hash).filter(hash => !forkHashes.has(hash));
 
-    if (objectsToCopy.length > 0) {
+    if (missingHashes.length > 0) {
+        // Fetch only the full objects we actually need to copy
+        const missingObjects = await GitObject.find({ 
+            repositoryId: parentRepo._id, 
+            hash: { $in: missingHashes } 
+        }).lean();
+
+        const objectsToCopy = missingObjects.map(o => ({
+            repositoryId: forkedRepo._id,
+            hash: o.hash,
+            type: o.type,
+            data: o.data,
+            pushedBy: req.user._id
+        }));
+
         await GitObject.insertMany(objectsToCopy);
     }
 
@@ -431,6 +472,7 @@ const syncRepo = asyncHandler(async (req, res) => {
 });
 
 module.exports = { 
+    checkRepoAvailability,
     createRepo, 
     updateRepo, 
     getUserRepos, 

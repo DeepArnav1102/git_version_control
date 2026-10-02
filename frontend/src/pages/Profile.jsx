@@ -14,6 +14,7 @@ import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
 import { Lottie } from 'lottie-react';
 import loadingAnimation from '../assets/Loading V2/loadingV2.json';
+import useProfileShortcuts from '../hooks/useProfileShortcuts';
 
 export default function Profile() {
   const { user: currentUser, setUser } = useAuthStore();
@@ -54,11 +55,17 @@ export default function Profile() {
 
   // Sync state with URL parameter if navigated from elsewhere
   useEffect(() => {
-    const nextTab = tabParam || 'overview';
+    let nextTab = tabParam || 'overview';
+    
+    // Prevent non-owners from viewing the tokens tab
+    if (nextTab === 'tokens' && !isOwner) {
+      nextTab = 'overview';
+    }
+
     if (nextTab !== activeTab) {
       setActiveTab(nextTab);
     }
-  }, [tabParam, activeTab]);
+  }, [tabParam, activeTab, isOwner]);
 
   // Keep URL parameter in sync with state when user clicks FloatingNav
   const handleTabChange = (newTab) => {
@@ -69,6 +76,14 @@ export default function Profile() {
       setSearchParams({}, { replace: true });
     }
   };
+
+  useProfileShortcuts({
+    onEditProfile: () => { if (isOwner) setEditing(true); },
+    onSwitchToOverview: () => handleTabChange('overview'),
+    onSwitchToRepositories: () => handleTabChange('repositories'),
+    onSwitchToStarred: () => handleTabChange('stars'),
+    onSwitchToTokens: () => { if (isOwner) handleTabChange('tokens'); }
+  });
 
   const defaultPfp =
     import.meta.env.VITE_DEFAULT_PFP_URL ||
@@ -206,7 +221,27 @@ export default function Profile() {
             transition={{ duration: 0.3 }}
             className="w-full"
           >
-            {user?.starredRepos && user.starredRepos.length > 0 ? (
+            {isLoadingProfile || !user ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between min-h-[140px]">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+                        <div className="w-32 h-4 bg-gray-200 rounded animate-pulse" />
+                        <div className="w-12 h-4 bg-gray-100 rounded-full animate-pulse ml-1" />
+                      </div>
+                      <div className="w-full h-3 bg-gray-100 rounded animate-pulse mb-2" />
+                      <div className="w-2/3 h-3 bg-gray-100 rounded animate-pulse" />
+                    </div>
+                    <div className="mt-4 flex items-center gap-4">
+                      <div className="w-16 h-3 bg-gray-200 rounded animate-pulse" />
+                      <div className="w-10 h-3 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : user?.starredRepos && user.starredRepos.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {user.starredRepos.map((repo) => (
                   <div key={repo._id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
