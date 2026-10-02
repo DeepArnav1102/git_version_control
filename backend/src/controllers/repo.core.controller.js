@@ -63,7 +63,7 @@ const createRepo = asyncHandler(async (req, res) => {
 // ─── Update Repository ────────────────────────────────────────────────
 const updateRepo = asyncHandler(async (req, res) => {
     const { owner, repo } = req.params;
-    const { name, description, isPrivate, defaultBranch } = req.body;
+    const { name, description, isPrivate, defaultBranch, topics, features } = req.body;
 
     const repoDoc = await resolveRepo(owner, repo, req.user);
     if (!repoDoc) throw new ApiError(404, 'Repository not found');
@@ -88,6 +88,18 @@ const updateRepo = asyncHandler(async (req, res) => {
 
     if (description !== undefined) repoDoc.description = description;
     if (isPrivate !== undefined) repoDoc.isPrivate = Boolean(isPrivate);
+    
+    if (topics !== undefined && Array.isArray(topics)) {
+        repoDoc.topics = topics;
+    }
+
+    if (features !== undefined && typeof features === 'object') {
+        repoDoc.features = {
+            hasIssues: features.hasIssues !== undefined ? features.hasIssues : repoDoc.features?.hasIssues,
+            hasPullRequests: features.hasPullRequests !== undefined ? features.hasPullRequests : repoDoc.features?.hasPullRequests,
+            hasWiki: features.hasWiki !== undefined ? features.hasWiki : repoDoc.features?.hasWiki
+        };
+    }
     
     if (defaultBranch) {
         const branchExists = repoDoc.branches.some(b => b.name === defaultBranch);
@@ -164,6 +176,8 @@ const getRepoDetails = asyncHandler(async (req, res) => {
             select: 'username'
         }
     });
+    await repoDoc.populate('collaborators.user', 'username email name profilePicture');
+    await repoDoc.populate('pendingInvites.user', 'username email name profilePicture');
 
     let responseData = repoDoc.toObject();
 
@@ -471,6 +485,118 @@ const syncRepo = asyncHandler(async (req, res) => {
     });
 });
 
+const inviteCollaborator = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { username, role = 'read' } = req.body;
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    if (repoDoc.owner.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, 'Only the repository owner can invite collaborators');
+    }
+
+    const invitee = await User.findOne({ username });
+    if (!invitee) throw new ApiError(404, 'User not found');
+
+    if (invitee._id.toString() === req.user._id.toString()) {
+        throw new ApiError(400, 'You cannot invite yourself');
+    }
+
+    const isAlreadyCollaborator = repoDoc.collaborators.some(c => c.user.toString() === invitee._id.toString());
+    if (isAlreadyCollaborator) {
+        throw new ApiError(400, 'User is already a collaborator');
+    }
+
+    const hasPendingInvite = repoDoc.pendingInvites?.some(i => i.user.toString() === invitee._id.toString());
+    if (hasPendingInvite) {
+        throw new ApiError(400, 'User already has a pending invite');
+    }
+
+    if (!repoDoc.pendingInvites) repoDoc.pendingInvites = [];
+    repoDoc.pendingInvites.push({ user: invitee._id, role });
+    await repoDoc.save();
+
+    await Notification.create({
+        recipient: invitee._id,
+        actor: req.user._id,
+        type: 'REPO_INVITE',
+        repo: repoDoc._id,
+    });
+
+    res.status(200).json({ success: true, message: 'Invitation sent successfully' });
+});
+
+const acceptInvite = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    const inviteIndex = (repoDoc.pendingInvites || []).findIndex(i => i.user.toString() === req.user._id.toString());
+    
+    if (inviteIndex === -1) {
+        throw new ApiError(400, 'No pending invite found for this repository');
+    }
+
+    const invite = repoDoc.pendingInvites[inviteIndex];
+
+    repoDoc.pendingInvites.splice(inviteIndex, 1);
+    
+    if (!repoDoc.collaborators) repoDoc.collaborators = [];
+    repoDoc.collaborators.push({ user: req.user._id, role: invite.role });
+    
+    await repoDoc.save();
+
+    // Try to mark notification as read
+    await Notification.updateMany(
+        { recipient: req.user._id, type: 'REPO_INVITE', repo: repoDoc._id },
+        { $set: { isRead: true } }
+    );
+
+    res.status(200).json({ success: true, message: 'Invitation accepted successfully' });
+});
+
+const removeCollaborator = asyncHandler(async (req, res) => {
+    const { owner, repo, userId } = req.params;
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    if (repoDoc.owner.toString() !== req.user._id.toString() && req.user._id.toString() !== userId) {
+        throw new ApiError(403, 'You do not have permission to remove collaborators');
+    }
+
+    let removed = false;
+
+    if (repoDoc.collaborators) {
+        const initLen = repoDoc.collaborators.length;
+        repoDoc.collaborators = repoDoc.collaborators.filter(c => c.user.toString() !== userId);
+        if (repoDoc.collaborators.length < initLen) removed = true;
+    }
+
+    if (repoDoc.pendingInvites) {
+        const initLen = repoDoc.pendingInvites.length;
+        repoDoc.pendingInvites = repoDoc.pendingInvites.filter(i => i.user.toString() !== userId);
+        if (repoDoc.pendingInvites.length < initLen) removed = true;
+    }
+
+    if (!removed) {
+        throw new ApiError(404, 'User is not a collaborator or invitee');
+    }
+
+    await repoDoc.save();
+
+    // Remove any pending invite notifications for this user
+    await Notification.deleteMany({
+        recipient: userId,
+        repo: repoDoc._id,
+        type: 'REPO_INVITE'
+    });
+
+    res.status(200).json({ success: true, message: 'Collaborator removed successfully' });
+});
+
 module.exports = { 
     checkRepoAvailability,
     createRepo, 
@@ -482,5 +608,8 @@ module.exports = {
     deleteRepo, 
     toggleStarRepo, 
     forkRepo, 
-    syncRepo 
+    syncRepo,
+    inviteCollaborator,
+    acceptInvite,
+    removeCollaborator
 };
