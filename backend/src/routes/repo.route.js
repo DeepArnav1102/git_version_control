@@ -14,6 +14,8 @@ const {
     storeObject,
     updateRef,
     getRemoteRef,
+    getRemoteRefs,
+    deleteRemoteRef,
     getObject,
     requestDeleteOtp,
     deleteRepo,
@@ -215,7 +217,23 @@ router.post('/:owner/:repo/objects', protect, storeObject);
 router.post('/:owner/:repo/refs', protect, updateRef);
 
 // ─── CLI Fetch Endpoints (Full path: :owner/:repo) ────────────────────
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs:
+ *   get:
+ *     summary: Get all remote branch references (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/refs', protect, getRemoteRefs);
 
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs/{branch}:
+ *   delete:
+ *     summary: Delete a remote branch reference (CLI)
+ *     tags: [CLI]
+ */
+router.delete('/:owner/:repo/refs/:branch', protect, deleteRemoteRef);
 /**
  * @swagger
  * /api/v1/repos/{owner}/{repo}/refs/{branch}:
