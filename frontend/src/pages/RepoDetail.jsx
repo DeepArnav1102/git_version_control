@@ -275,6 +275,34 @@ export default function RepoDetail() {
     }
   };
 
+  const handleCreateBranch = async (newBranchName) => {
+    const sourceBranch = repoData.branches?.find(b => b.name === currentBranch);
+    const commitHash = sourceBranch ? sourceBranch.commitHash : null;
+
+    if (!commitHash) {
+      jsonToast.error("Could not find commit hash for current branch.");
+      return;
+    }
+
+    try {
+      const res = await apiClient.post(`/repos/${owner}/${repo}/refs`, {
+        branch: newBranchName,
+        commitHash: commitHash
+      });
+      jsonToast.success(`Branch '${newBranchName}' created successfully!`);
+      
+      // Update local repoData with new branch
+      setRepoData(prev => ({
+        ...prev,
+        branches: [...(prev.branches || []), { name: newBranchName, commitHash, updatedAt: new Date().toISOString() }]
+      }));
+      
+      setCurrentBranch(newBranchName);
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || "Failed to create branch");
+    }
+  };
+
   const handleOpenRepoInCodespace = async () => {
     try {
       setLoadingCodespace(true);
@@ -660,6 +688,8 @@ export default function RepoDetail() {
         loadingCodespace={loadingCodespace}
         isRepo100PercentPython={isRepo100PercentPython}
         currentUser={user}
+        setCurrentBranch={setCurrentBranch}
+        handleCreateBranch={handleCreateBranch}
       />
 
       {/* Horizontal Tabs */}
