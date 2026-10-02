@@ -5,12 +5,17 @@ const GitObject = require('../models/GitObject.model');
 const { resolveRepo } = require('../utils/repoHelpers');
 
 
-// ─── Push / Object Storage Endpoints ─────────────────────────────────
+// ============================================================
+// CHECK OBJECT EXISTS
+// ============================================================
 
-// Check whether an object already exists on the remote
 const checkObjectExists = asyncHandler(async (req, res) => {
     const { owner, repo, hash } = req.params;
-    const repoName = repo || owner;
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
 
     const repoDoc = await resolveRepo(
         owner && repo ? owner : null,
@@ -19,21 +24,26 @@ const checkObjectExists = asyncHandler(async (req, res) => {
     );
 
     if (!repoDoc) {
-        return res.status(200).json({ exists: false });
+        return res.status(200).json({
+            exists: false,
+        });
     }
 
     const exists = await GitObject.exists({
         repositoryId: repoDoc._id,
-        hash
+        hash,
     });
 
-    res.status(200).json({
-        exists: !!exists
+    return res.status(200).json({
+        exists: !!exists,
     });
 });
 
 
-// Store a Git object pushed by Rusty
+// ============================================================
+// STORE GIT OBJECT
+// ============================================================
+
 const storeObject = asyncHandler(async (req, res) => {
     const { owner, repo } = req.params;
 
@@ -45,7 +55,7 @@ const storeObject = asyncHandler(async (req, res) => {
     const {
         type: objectType,
         hash,
-        data
+        data,
     } = req.body;
 
     if (!objectType || !hash || data === undefined) {
@@ -55,24 +65,33 @@ const storeObject = asyncHandler(async (req, res) => {
         );
     }
 
-    let repoDoc = await resolveRepo(
+    const repoDoc = await resolveRepo(
         owner && repo ? owner : null,
         repoName,
         req.user
     );
 
     if (!repoDoc) {
-        throw new ApiError(404, 'Repository not found. Please create it first.');
+        throw new ApiError(
+            404,
+            'Repository not found. Please create it first.'
+        );
     }
 
-    if (repoDoc.owner.toString() !== req.user._id.toString()) {
-        throw new ApiError(403, 'You do not have permission to push to this repository');
+    if (
+        repoDoc.owner.toString() !==
+        req.user._id.toString()
+    ) {
+        throw new ApiError(
+            403,
+            'You do not have permission to push to this repository'
+        );
     }
 
     await GitObject.updateOne(
         {
             repositoryId: repoDoc._id,
-            hash
+            hash,
         },
         {
             $set: {
@@ -87,11 +106,11 @@ const storeObject = asyncHandler(async (req, res) => {
             },
         },
         {
-            upsert: true
+            upsert: true,
         }
     );
 
-    res.status(200).json({
+    return res.status(200).json({
         success: true,
         message: 'Object stored successfully',
         hash,
@@ -99,7 +118,10 @@ const storeObject = asyncHandler(async (req, res) => {
 });
 
 
-// Update remote branch reference
+// ============================================================
+// UPDATE REMOTE BRANCH REF
+// ============================================================
+
 const updateRef = asyncHandler(async (req, res) => {
     const { owner, repo } = req.params;
 
@@ -110,7 +132,7 @@ const updateRef = asyncHandler(async (req, res) => {
 
     const {
         branch,
-        commitHash
+        commitHash,
     } = req.body;
 
     if (!branch || !commitHash) {
@@ -124,21 +146,29 @@ const updateRef = asyncHandler(async (req, res) => {
         .replace(/^refs\/heads\//, '')
         .trim();
 
-    let repoDoc = await resolveRepo(
+    const repoDoc = await resolveRepo(
         owner && repo ? owner : null,
         repoName,
         req.user
     );
 
     if (!repoDoc) {
-        throw new ApiError(404, 'Repository not found. Please create it first.');
+        throw new ApiError(
+            404,
+            'Repository not found. Please create it first.'
+        );
     }
 
-    if (repoDoc.owner.toString() !== req.user._id.toString()) {
-        throw new ApiError(403, 'You do not have permission to push to this repository');
+    if (
+        repoDoc.owner.toString() !==
+        req.user._id.toString()
+    ) {
+        throw new ApiError(
+            403,
+            'You do not have permission to push to this repository'
+        );
     }
 
-    // Inspect commit to extract metadata
     const commitObj = await GitObject.findOne({
         repositoryId: repoDoc._id,
         hash: commitHash,
@@ -150,17 +180,21 @@ const updateRef = asyncHandler(async (req, res) => {
     if (commitObj) {
         try {
             commitData = JSON.parse(commitObj.data);
-        } catch {}
+        } catch (error) {
+            commitData = {};
+        }
     }
 
-    // Update existing branch or create it
     const branchIndex = repoDoc.branches.findIndex(
-        (b) => b.name === cleanBranch
+        (item) => item.name === cleanBranch
     );
 
     if (branchIndex >= 0) {
-        repoDoc.branches[branchIndex].commitHash = commitHash;
-        repoDoc.branches[branchIndex].updatedAt = new Date();
+        repoDoc.branches[branchIndex].commitHash =
+            commitHash;
+
+        repoDoc.branches[branchIndex].updatedAt =
+            new Date();
     } else {
         repoDoc.branches.push({
             name: cleanBranch,
@@ -179,7 +213,14 @@ const updateRef = asyncHandler(async (req, res) => {
             commitData.message ||
             `Update ${cleanBranch}`,
         tree: commitData.tree,
-        parent: commitData.parent || (commitData.parents && commitData.parents.length > 0 ? commitData.parents[0] : null),
+        parent:
+            commitData.parent ||
+            (
+                commitData.parents &&
+                commitData.parents.length > 0
+                    ? commitData.parents[0]
+                    : null
+            ),
         author:
             req.user.username ||
             req.user.email,
@@ -188,7 +229,7 @@ const updateRef = asyncHandler(async (req, res) => {
 
     await repoDoc.save();
 
-    res.status(200).json({
+    return res.status(200).json({
         success: true,
         message:
             `Successfully pushed to branch '${cleanBranch}'`,
@@ -201,10 +242,16 @@ const updateRef = asyncHandler(async (req, res) => {
 });
 
 
-// ─── Fetch: Get Remote Branch Reference ──────────────────────────────
+// ============================================================
+// GET ONE REMOTE BRANCH REF
+// ============================================================
 
 const getRemoteRef = asyncHandler(async (req, res) => {
-    const { owner, repo, branch } = req.params;
+    const {
+        owner,
+        repo,
+        branch,
+    } = req.params;
 
     const repoName = (repo || owner)
         .replace(/\.git$/, '')
@@ -225,7 +272,7 @@ const getRemoteRef = asyncHandler(async (req, res) => {
     }
 
     const branchDoc = repoDoc.branches.find(
-        (b) => b.name === branch
+        (item) => item.name === branch
     );
 
     if (!branchDoc || !branchDoc.commitHash) {
@@ -235,7 +282,7 @@ const getRemoteRef = asyncHandler(async (req, res) => {
         );
     }
 
-    res.status(200).json({
+    return res.status(200).json({
         success: true,
         branch: branchDoc.name,
         commitHash: branchDoc.commitHash,
@@ -243,10 +290,139 @@ const getRemoteRef = asyncHandler(async (req, res) => {
 });
 
 
-// ─── Fetch: Download Git Object ──────────────────────────────────────
+// ============================================================
+// GET ALL REMOTE BRANCH REFS
+// ============================================================
+
+const getRemoteRefs = asyncHandler(async (req, res) => {
+    const {
+        owner,
+        repo,
+    } = req.params;
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
+
+    const repoDoc = await resolveRepo(
+        owner && repo ? owner : null,
+        repoName,
+        req.user
+    );
+
+    if (!repoDoc) {
+        throw new ApiError(
+            404,
+            'Repository not found'
+        );
+    }
+
+    const branches = repoDoc.branches
+        .filter(
+            (branch) => branch.commitHash
+        )
+        .map((branch) => ({
+            branch: branch.name,
+            commitHash: branch.commitHash,
+        }));
+
+    return res.status(200).json({
+        success: true,
+        branches,
+    });
+});
+
+
+// ============================================================
+// DELETE REMOTE BRANCH
+// ============================================================
+
+const deleteRemoteRef = asyncHandler(async (req, res) => {
+    const {
+        owner,
+        repo,
+        branch,
+    } = req.params;
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
+
+    const repoDoc = await resolveRepo(
+        owner && repo ? owner : null,
+        repoName,
+        req.user
+    );
+
+    if (!repoDoc) {
+        throw new ApiError(
+            404,
+            'Repository not found'
+        );
+    }
+
+    if (
+        repoDoc.owner.toString() !==
+        req.user._id.toString()
+    ) {
+        throw new ApiError(
+            403,
+            'You do not have permission to delete branches'
+        );
+    }
+
+    const cleanBranch = branch
+        .replace(/^refs\/heads\//, '')
+        .trim();
+
+    if (
+        cleanBranch === repoDoc.defaultBranch
+    ) {
+        throw new ApiError(
+            400,
+            `Cannot delete the default branch '${cleanBranch}'`
+        );
+    }
+
+    const branchIndex = repoDoc.branches.findIndex(
+        (item) => item.name === cleanBranch
+    );
+
+    if (branchIndex === -1) {
+        throw new ApiError(
+            404,
+            `Branch '${cleanBranch}' not found`
+        );
+    }
+
+    repoDoc.branches.splice(
+        branchIndex,
+        1
+    );
+
+    await repoDoc.save();
+
+    return res.status(200).json({
+        success: true,
+        message:
+            `Branch '${cleanBranch}' deleted`,
+        branch: cleanBranch,
+    });
+});
+
+
+// ============================================================
+// GET GIT OBJECT
+// ============================================================
 
 const getObject = asyncHandler(async (req, res) => {
-    const { owner, repo, hash } = req.params;
+    const {
+        owner,
+        repo,
+        hash,
+    } = req.params;
 
     const repoName = (repo || owner)
         .replace(/\.git$/, '')
@@ -278,7 +454,7 @@ const getObject = asyncHandler(async (req, res) => {
         );
     }
 
-    res.status(200).json({
+    return res.status(200).json({
         success: true,
         hash: object.hash,
         type: object.type,
@@ -287,10 +463,16 @@ const getObject = asyncHandler(async (req, res) => {
 });
 
 
+// ============================================================
+// EXPORTS
+// ============================================================
+
 module.exports = {
     checkObjectExists,
     storeObject,
     updateRef,
     getRemoteRef,
+    getRemoteRefs,
+    deleteRemoteRef,
     getObject,
 };
