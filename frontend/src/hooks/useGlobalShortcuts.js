@@ -53,6 +53,9 @@ export default function useGlobalShortcuts() {
           case 'i':
             navigate('/ide');
             break;
+          case 'b':
+            navigate('/notifications');
+            break;
           default:
             break;
         }

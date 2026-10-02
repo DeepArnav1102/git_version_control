@@ -3,6 +3,7 @@ const User = require('../models/User.model');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
+const Notification = require('../models/Notification.model');
 
 const getMe = asyncHandler(async (req, res) => {
     if (!req.user) {
@@ -338,10 +339,24 @@ const toggleFollowUser = asyncHandler(async (req, res) => {
         // Unfollow
         currentUser.following.pull(targetUser._id);
         targetUser.followers.pull(currentUser._id);
+        
+        // Optionally delete the notification if they unfollow
+        await Notification.findOneAndDelete({
+            recipient: targetUser._id,
+            actor: currentUser._id,
+            type: 'FOLLOW'
+        });
     } else {
         // Follow
         currentUser.following.push(targetUser._id);
         targetUser.followers.push(currentUser._id);
+        
+        // Create notification
+        await Notification.create({
+            recipient: targetUser._id,
+            actor: currentUser._id,
+            type: 'FOLLOW'
+        });
     }
 
     await currentUser.save();

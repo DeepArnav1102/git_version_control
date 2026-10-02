@@ -46,7 +46,10 @@ const LottieIcon = ({ src, isToggle = true, trigger = 'click', onClick, active }
   };
 
   const handleClick = () => {
-    if (trigger === 'hover') return;
+    if (trigger === 'hover') {
+      if (onClick) onClick();
+      return;
+    }
 
     if (isToggle) {
       if (!openRef.current) {

@@ -56,14 +56,29 @@ export default function ProfileRepos({ user, onRepoCountChange }) {
 
   if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[300px] flex items-center justify-center"
-      >
-        <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
-      </motion.div>
+      <div className="space-y-3">
+        {/* Search Header Skeleton */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-9 bg-gray-100 rounded-lg animate-pulse" />
+          {isOwner && (
+            <div className="w-[70px] h-9 bg-gray-100 rounded-lg animate-pulse" />
+          )}
+        </div>
+        
+        {/* Repos List Skeleton */}
+        <div className="space-y-0 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden divide-y divide-gray-100">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="px-5 py-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-48 h-4 bg-gray-200 rounded animate-pulse" />
+                <div className="w-16 h-4 bg-gray-100 rounded-full animate-pulse" />
+              </div>
+              <div className="w-3/4 h-3 bg-gray-100 rounded animate-pulse mb-2" />
+              <div className="w-1/3 h-3 bg-gray-50 rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 

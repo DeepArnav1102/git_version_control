@@ -21,7 +21,7 @@ async function getLastCommitsForEntries(repoId, startCommitHash, pathSegments, e
         if (!commitObj) break;
 
         const currData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
-        const parentHash = currData.parent;
+        const parentHash = currData.parent || (currData.parents && currData.parents.length > 0 ? currData.parents[0] : null);
 
         if (!parentHash) {
             // First commit ever, everything left was created here
@@ -337,15 +337,18 @@ const getRepoCommits = asyncHandler(async (req, res) => {
         if (!entry) break;
 
         const commitData = entry.parsed;
+        
+        const parentHash = commitData.parent || (commitData.parents && commitData.parents.length > 0 ? commitData.parents[0] : null);
+        
         commits.push({
             hash: currentHash,
             message: commitData.message,
             tree: commitData.tree,
-            parent: commitData.parent,
+            parent: parentHash,
             author: commitData.author || repoDoc.latestCommit?.author || 'Contributor',
             date: commitData.date || repoDoc.latestCommit?.date || entry.createdAt,
         });
-        currentHash = commitData.parent || null;
+        currentHash = parentHash;
     }
 
     // Resolve profile pictures for unique authors — single batch query

@@ -141,20 +141,17 @@ export default function RepoHeader({
           )}
 
           <div className="flex rounded-md shadow-sm">
-            <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-l-md hover:bg-gray-50 transition-colors cursor-pointer">
+            <button className="flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer">
               <Eye size={14} className="text-gray-500" />
               <span>Watch</span>
               <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.watchersCount || 0}</span>
-            </button>
-            <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
-              <ChevronDown size={14} className="text-gray-500" />
             </button>
           </div>
           <div className="flex rounded-md shadow-sm">
             <button 
               onClick={handleFork}
               disabled={currentUser?._id === repoData.owner?._id}
-              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-l-md transition-colors cursor-pointer border-y border-l ${
+              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer border ${
                 currentUser?._id === repoData.owner?._id ? 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
               }`}
             >
@@ -162,23 +159,17 @@ export default function RepoHeader({
               <span>Fork</span>
               <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.forksCount || 0}</span>
             </button>
-            <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
-              <ChevronDown size={14} className="text-gray-500" />
-            </button>
           </div>
           <div className="flex rounded-md shadow-sm">
             <button 
               onClick={handleToggleStar}
-              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-l-md transition-colors cursor-pointer border-y border-l ${
+              className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer border ${
                 isStarred ? 'bg-gray-100 text-gray-900 border-gray-300 shadow-inner' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
               }`}
             >
               <Star size={14} className={isStarred ? 'text-gray-900 fill-gray-900' : 'text-gray-500'} />
               <span>{isStarred ? 'Unstar' : 'Star'}</span>
               <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px] ml-1">{repoData.starsCount || 0}</span>
-            </button>
-            <button className="px-1.5 py-1 text-gray-700 bg-white border border-l-0 border-gray-300 rounded-r-md hover:bg-gray-50 transition-colors cursor-pointer">
-              <ChevronDown size={14} className="text-gray-500" />
             </button>
           </div>
         </div>

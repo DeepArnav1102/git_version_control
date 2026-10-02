@@ -25,6 +25,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const repoRouter = require('./routes/repo.route');
+const notificationRouter = require('./routes/notification.route');
 const { protect } = require('./middlewares/auth.middleware');
 const { checkObjectExists, storeObject, updateRef } = require('./controllers/repo.controller');
 
@@ -33,6 +34,7 @@ app.use('/api/v1/tokens', tokenRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/ide', ideRouter);
 app.use('/api/v1/repos', repoRouter);
+app.use('/api/v1/notifications', notificationRouter);
 app.use('/repos', repoRouter);
 
 // Fallback endpoints for direct push URLs without /api/v1/repos prefix
