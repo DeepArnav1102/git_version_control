@@ -179,7 +179,7 @@ const updateRef = asyncHandler(async (req, res) => {
             commitData.message ||
             `Update ${cleanBranch}`,
         tree: commitData.tree,
-        parent: commitData.parent,
+        parent: commitData.parent || (commitData.parents && commitData.parents.length > 0 ? commitData.parents[0] : null),
         author:
             req.user.username ||
             req.user.email,

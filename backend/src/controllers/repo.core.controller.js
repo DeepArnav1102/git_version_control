@@ -198,7 +198,7 @@ const getRepoDetails = asyncHandler(async (req, res) => {
                 while (currP) {
                     parentAncestors.add(currP);
                     const c = commitMap.get(currP);
-                    currP = c && c.parent ? c.parent : null;
+                    currP = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
 
                 let currF = forkHash;
@@ -210,14 +210,14 @@ const getRepoDetails = asyncHandler(async (req, res) => {
                     }
                     ahead++;
                     const c = commitMap.get(currF);
-                    currF = c && c.parent ? c.parent : null;
+                    currF = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
 
                 currP = parentHash;
                 while (currP && currP !== commonAncestor) {
                     behind++;
                     const c = commitMap.get(currP);
-                    currP = c && c.parent ? c.parent : null;
+                    currP = c ? (c.parent || (c.parents && c.parents.length > 0 ? c.parents[0] : null)) : null;
                 }
             }
         }
