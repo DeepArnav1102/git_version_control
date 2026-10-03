@@ -65,6 +65,14 @@ const storeObject = asyncHandler(async (req, res) => {
         );
     }
 
+    if (typeof hash !== 'string' || !/^[a-f0-9]{40,64}$/.test(hash)) {
+        throw new ApiError(400, 'Invalid hash format');
+    }
+
+    if (typeof objectType !== 'string' || !['commit', 'tree', 'blob'].includes(objectType)) {
+        throw new ApiError(400, 'Invalid object type');
+    }
+
     const repoDoc = await resolveRepo(
         owner && repo ? owner : null,
         repoName,
@@ -88,6 +96,11 @@ const storeObject = asyncHandler(async (req, res) => {
         );
     }
 
+    const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+    if (dataString.length > 5 * 1024 * 1024) { // 5MB limit
+        throw new ApiError(400, 'Data payload exceeds 5MB limit');
+    }
+
     await GitObject.updateOne(
         {
             repositoryId: repoDoc._id,
@@ -98,10 +111,7 @@ const storeObject = asyncHandler(async (req, res) => {
                 repositoryId: repoDoc._id,
                 hash,
                 type: objectType,
-                data:
-                    typeof data === 'string'
-                        ? data
-                        : JSON.stringify(data),
+                data: dataString,
                 pushedBy: req.user._id,
             },
         },
@@ -140,6 +150,14 @@ const updateRef = asyncHandler(async (req, res) => {
             400,
             'branch and commitHash are required'
         );
+    }
+
+    if (typeof commitHash !== 'string' || !/^[a-f0-9]{40,64}$/.test(commitHash)) {
+        throw new ApiError(400, 'Invalid commit hash format');
+    }
+
+    if (typeof branch !== 'string' || branch.length > 255 || !/^[a-zA-Z0-9_\-\.\/]+$/.test(branch)) {
+        throw new ApiError(400, 'Invalid branch name');
     }
 
     const cleanBranch = branch
@@ -207,11 +225,13 @@ const updateRef = asyncHandler(async (req, res) => {
         repoDoc.defaultBranch = cleanBranch;
     }
 
+    let safeMessage = commitData.message || `Update ${cleanBranch}`;
+    if (typeof safeMessage !== 'string') safeMessage = String(safeMessage);
+    if (safeMessage.length > 5000) safeMessage = safeMessage.substring(0, 5000) + '...';
+
     repoDoc.latestCommit = {
         hash: commitHash,
-        message:
-            commitData.message ||
-            `Update ${cleanBranch}`,
+        message: safeMessage,
         tree: commitData.tree,
         parent:
             commitData.parent ||
