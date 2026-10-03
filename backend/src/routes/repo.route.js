@@ -29,8 +29,12 @@ const {
     removeCollaborator,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
+const prRouter = require('./pr.route');
 
 const router = express.Router();
+
+// Mount Pull Request routes
+router.use('/:owner/:repo/pulls', prRouter);
 
 // ─── Web API ──────────────────────────────────────────────────────────
 

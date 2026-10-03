@@ -44,6 +44,7 @@ import RepoHeader from '../components/repo/RepoHeader';
 import CommitsTab from '../components/repo/CommitsTab';
 import SettingsTab from '../components/repo/SettingsTab';
 import CodeTab from '../components/repo/CodeTab';
+import PullRequestsTab from '../components/repo/PullRequestsTab';
 import { calculateLanguages } from '../utils/languageUtils';
 import useRepoShortcuts from '../hooks/useRepoShortcuts';
 
@@ -702,6 +703,13 @@ export default function RepoDetail() {
           <Code size={16} /> Code
         </button>
         <button
+          onClick={() => handleTabChange('pull-requests')}
+          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'pull-requests' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+        >
+          <GitPullRequest size={16} /> Pull requests
+        </button>
+        <button
           onClick={() => handleTabChange('commits')}
           className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'commits' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
@@ -770,11 +778,16 @@ export default function RepoDetail() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2 }}
-            className="mt-6 bg-white border border-gray-200 rounded-xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[300px]"
+            className="mt-6"
           >
-            <GitPullRequest size={32} className="text-gray-300 mb-3" />
-            <h3 className="text-lg font-bold text-gray-800">No pull requests yet</h3>
-            <p className="text-sm text-gray-500 mt-1">Welcome to pull requests!</p>
+            <PullRequestsTab 
+              owner={owner}
+              repo={repo}
+              isOwner={isOwner}
+              currentBranch={currentBranch}
+              branches={repoData?.branches || []}
+              repoId={repoData?._id}
+            />
           </motion.div>
         )}
 
