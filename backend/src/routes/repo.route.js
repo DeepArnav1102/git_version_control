@@ -24,6 +24,7 @@ const {
     syncRepo,
     deleteRepoFile,
     downloadRepoZip,
+    compareBranches,
     inviteCollaborator,
     acceptInvite,
     removeCollaborator,
@@ -161,6 +162,15 @@ router.get('/:owner/:repo/tree/:ref', protectOptional, getRepoTree);
  *     tags: [Repositories]
  */
 router.get('/:owner/:repo/zip/:ref', protectOptional, downloadRepoZip);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/compare/{compareString}:
+ *   get:
+ *     summary: Compare two branches or commits
+ *     tags: [Repositories]
+ */
+router.get('/:owner/:repo/compare/:compareString', protectOptional, compareBranches);
 
 /**
  * @swagger

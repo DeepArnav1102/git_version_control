@@ -551,6 +551,7 @@ export default function RepoDetail() {
     },
     onToggleSidebar: () => setSidebarOpen(prev => !prev),
     onSwitchToCode: () => handleTabChange('code'),
+    onSwitchToPullRequests: () => handleTabChange('pull-requests'),
     onSwitchToCommits: () => handleTabChange('commits'),
     onSwitchToSettings: () => { if (isOwner) handleTabChange('settings'); },
     onFocusBranchSelector: () => {

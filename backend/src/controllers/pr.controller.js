@@ -3,6 +3,7 @@ const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const PullRequest = require('../models/PullRequest.model');
 const GitObject = require('../models/GitObject.model');
+const User = require('../models/User.model');
 const { resolveRepo } = require('../utils/repoHelpers');
 const { findCommonAncestor, flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const crypto = require('crypto');
@@ -43,26 +44,117 @@ const createPullRequest = asyncHandler(async (req, res) => {
 
 const listPullRequests = asyncHandler(async (req, res) => {
     const { owner, repo } = req.params;
-    const { state } = req.query; // 'open', 'closed', 'merged'
+    const { state, author, assignee, reviewer, involves, sort } = req.query; // Extended query params
+    
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 30;
+    const skip = (page - 1) * limit;
 
-    const targetRepoDoc = await resolveRepo(owner, repo, req.user);
+    const targetRepoDoc = await Repository.findOne({ 
+        owner: (await User.findOne({ username: owner }))._id, 
+        name: repo 
+    }).populate('owner', 'username profilePicture')
+      .populate('collaborators.user', 'username profilePicture');
+    
     if (!targetRepoDoc) throw new ApiError(404, 'Repository not found');
 
     const query = { targetRepo: targetRepoDoc._id };
     if (state) query.state = state;
 
+    const resolveUser = async (val) => {
+        if (!val) return null;
+        if (val.match(/^[0-9a-fA-F]{24}$/)) return val;
+        const u = await User.findOne({ username: val });
+        return u ? u._id : '000000000000000000000000'; // Return a dummy ID if not found so query returns empty
+    };
+
+    if (author) query.author = await resolveUser(author);
+    if (assignee) query.assignees = await resolveUser(assignee);
+    if (reviewer) query.reviewers = await resolveUser(reviewer);
+    if (involves) {
+        const invId = await resolveUser(involves);
+        query.$or = [
+            { author: invId },
+            { assignees: invId },
+            { reviewers: invId }
+        ];
+    }
+    if (req.query.label) query['labels.name'] = req.query.label;
+    if (req.query.milestone) query.milestone = req.query.milestone;
+    if (req.query.project) query.project = req.query.project;
+    
+    let sortQuery = { createdAt: -1 };
+    if (sort === 'oldest') sortQuery = { createdAt: 1 };
+    else if (sort === 'recently_updated') sortQuery = { updatedAt: -1 };
+
+    const totalPrs = await PullRequest.countDocuments(query);
+    const totalPages = Math.ceil(totalPrs / limit) || 1;
+
     const prs = await PullRequest.find(query)
-        .populate('author', 'username avatarUrl')
+        .sort(sortQuery)
+        .skip(skip)
+        .limit(limit)
+        .populate('author', 'username profilePicture')
+        .populate('assignees', 'username profilePicture')
+        .populate('reviewers', 'username profilePicture')
         .populate('sourceRepo', 'name owner')
         .populate('targetRepo', 'name owner');
         
-    res.status(200).json({ success: true, prs });
+    const labelsAggregation = await PullRequest.aggregate([
+        { $match: { targetRepo: targetRepoDoc._id } },
+        { $unwind: "$labels" },
+        {
+            $group: {
+                _id: "$labels.name",
+                color: { $first: "$labels.color" },
+                description: { $first: "$labels.description" }
+            }
+        },
+        { $project: { name: "$_id", color: 1, description: 1, _id: 0 } }
+    ]);
+    
+    const uniqueLabelsMap = new Map([
+        ['bug', { name: 'bug', color: '#d73a4a', description: "Something isn't working" }],
+        ['documentation', { name: 'documentation', color: '#0075ca', description: "Improvements or additions to documentation" }],
+        ['duplicate', { name: 'duplicate', color: '#cfd3d7', description: "This issue or pull request already exists" }],
+        ['enhancement', { name: 'enhancement', color: '#a2eeef', description: "New feature or request" }],
+        ['good first issue', { name: 'good first issue', color: '#7057ff', description: "Good for newcomers" }],
+        ['help wanted', { name: 'help wanted', color: '#008672', description: "Extra attention is needed" }],
+        ['invalid', { name: 'invalid', color: '#e4e669', description: "This doesn't seem right" }],
+        ['question', { name: 'question', color: '#d876e3', description: "Further information is requested" }],
+        ['wontfix', { name: 'wontfix', color: '#ffffff', description: "This will not be worked on" }]
+    ]);
+    
+    labelsAggregation.forEach(l => {
+        if (l.name && !uniqueLabelsMap.has(l.name)) {
+            uniqueLabelsMap.set(l.name, l);
+        }
+    });
+    
+    const possibleAssigneesAndAuthors = [targetRepoDoc.owner, ...targetRepoDoc.collaborators.map(c => c.user)];
+    // deduplicate users just in case
+    const uniqueUsersMap = new Map();
+    possibleAssigneesAndAuthors.filter(Boolean).forEach(u => uniqueUsersMap.set(u._id.toString(), u));
+
+    res.status(200).json({ 
+        success: true, 
+        prs,
+        metadata: {
+            users: Array.from(uniqueUsersMap.values()),
+            labels: Array.from(uniqueLabelsMap.values()),
+            page,
+            totalPages,
+            totalPrs
+        }
+    });
 });
 
 const getPullRequest = asyncHandler(async (req, res) => {
     const { owner, repo, id } = req.params;
     const pr = await PullRequest.findById(id)
-        .populate('author', 'username avatarUrl')
+        .populate('author', 'username profilePicture')
+        .populate('assignees', 'username profilePicture')
+        .populate('reviewers', 'username profilePicture')
         .populate('sourceRepo', 'name owner')
         .populate('targetRepo', 'name owner');
 
@@ -79,11 +171,7 @@ const getPullRequestCommits = asyncHandler(async (req, res) => {
 
 const updatePullRequest = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { state } = req.body;
-
-    if (!['open', 'closed'].includes(state)) {
-        throw new ApiError(400, 'Invalid state');
-    }
+    const { state, assignees, reviewers, labels, milestone, project } = req.body;
 
     const pr = await PullRequest.findById(id).populate('targetRepo');
     if (!pr) throw new ApiError(404, 'Pull Request not found');
@@ -95,8 +183,34 @@ const updatePullRequest = asyncHandler(async (req, res) => {
         throw new ApiError(403, 'Not authorized to update this pull request');
     }
 
-    pr.state = state;
+    if (state !== undefined) {
+        if (!['open', 'closed'].includes(state)) {
+            throw new ApiError(400, 'Invalid state');
+        }
+        pr.state = state;
+    }
+    
+    if (assignees !== undefined) pr.assignees = assignees;
+    if (reviewers !== undefined) pr.reviewers = reviewers;
+    if (labels !== undefined) {
+        if (!Array.isArray(labels)) {
+            throw new ApiError(400, 'Labels must be an array');
+        }
+        pr.labels = labels.filter(l => 
+            l && typeof l.name === 'string' && l.name.length > 0 && l.name.length <= 50 &&
+            (!l.color || /^#[0-9A-Fa-f]{3,6}$/i.test(l.color))
+        );
+    }
+    if (milestone !== undefined) pr.milestone = milestone;
+    if (project !== undefined) pr.project = project;
+
     await pr.save();
+    
+    await pr.populate([
+        { path: 'author', select: 'username profilePicture' },
+        { path: 'assignees', select: 'username profilePicture' },
+        { path: 'reviewers', select: 'username profilePicture' }
+    ]);
 
     res.status(200).json({ success: true, pr });
 });

@@ -135,7 +135,8 @@ export default function Profile() {
                 alt={user?.username || 'Profile'}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.target.src = defaultPfp;
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = defaultPfp;
                 }}
               />
             </div>

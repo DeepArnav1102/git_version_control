@@ -1,42 +1,141 @@
 const GitObject = require('../models/GitObject.model');
 
-// Find Lowest Common Ancestor (LCA)
-async function findCommonAncestor(repoId, commitHash1, commitHash2) {
-    if (commitHash1 === commitHash2) return commitHash1;
+const diff = require('diff');
 
-    const visited1 = new Set();
-    const visited2 = new Set();
-    const queue1 = [commitHash1];
-    const queue2 = [commitHash2];
+function generateUnifiedDiff(oldStr, newStr) {
+    if (oldStr.length > 200000 || newStr.length > 200000) {
+        return { diffText: 'File is too large to display diffs.', additions: 0, deletions: 0 };
+    }
+    
+    // We just want additions and deletions count easily, so we can still use diffLines for stats
+    const changes = diff.diffLines(oldStr, newStr);
+    let additions = 0;
+    let deletions = 0;
+    changes.forEach(change => {
+        const linesCount = change.value.replace(/\n$/, '').split('\n').length;
+        if (change.added) additions += linesCount;
+        if (change.removed) deletions += linesCount;
+    });
 
-    while (queue1.length > 0 || queue2.length > 0) {
-        if (queue1.length > 0) {
-            const curr1 = queue1.shift();
-            if (visited2.has(curr1)) return curr1;
-            visited1.add(curr1);
-            
-            const commit1 = await GitObject.findOne({ repositoryId: repoId, hash: curr1, type: 'commit' });
-            if (commit1) {
-                const data = JSON.parse(commit1.data);
-                if (data.parent) queue1.push(data.parent);
-                if (data.parents) queue1.push(...data.parents);
+    // Generate context-aware patch
+    const patch = diff.createPatch('file', oldStr, newStr, '', '', { context: 3 });
+    const patchLines = patch.split('\n');
+    
+    // Strip the headers from createPatch output (first 4 lines usually)
+    // Format:
+    // Index: file
+    // ===================================================================
+    // --- file
+    // +++ file
+    // @@ -l,c +l,c @@
+    let startIndex = 0;
+    for (let i = 0; i < patchLines.length; i++) {
+        if (patchLines[i].startsWith('@@ ')) {
+            startIndex = i;
+            break;
+        }
+    }
+    
+    const diffText = patchLines.slice(startIndex).join('\n');
+
+    return { diffText, additions, deletions };
+}
+
+// Batched Traversal to find the true LCA and all commits in between
+async function getCommitGraph(repoId, headHash, baseHash) {
+    if (headHash === baseHash) {
+        return { lcaHash: headHash, commits: [], commitMap: new Map() };
+    }
+
+    const commitMap = new Map();
+    const headAncestors = new Set();
+    const baseAncestors = new Set();
+    
+    let headQueue = [headHash];
+    let baseQueue = [baseHash];
+    let commonAncestors = [];
+    
+    let extraDepth = 0;
+    let foundIntersection = false;
+
+    while ((headQueue.length > 0 || baseQueue.length > 0) && extraDepth < 10) {
+        if (foundIntersection) extraDepth++;
+
+        const hashesToFetch = [...new Set([...headQueue, ...baseQueue])].filter(h => !commitMap.has(h));
+        
+        if (hashesToFetch.length > 0) {
+            const objs = await GitObject.find({ repositoryId: repoId, hash: { $in: hashesToFetch }, type: 'commit' });
+            for (const obj of objs) {
+                try {
+                    commitMap.set(obj.hash, { parsed: typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data, createdAt: obj.createdAt });
+                } catch {}
             }
         }
 
-        if (queue2.length > 0) {
-            const curr2 = queue2.shift();
-            if (visited1.has(curr2)) return curr2;
-            visited2.add(curr2);
-            
-            const commit2 = await GitObject.findOne({ repositoryId: repoId, hash: curr2, type: 'commit' });
-            if (commit2) {
-                const data = JSON.parse(commit2.data);
-                if (data.parent) queue2.push(data.parent);
-                if (data.parents) queue2.push(...data.parents);
+        const nextHeadQueue = [];
+        for (const h of headQueue) {
+            if (!headAncestors.has(h)) {
+                headAncestors.add(h);
+                if (baseAncestors.has(h)) {
+                    foundIntersection = true;
+                    commonAncestors.push(h);
+                }
+                const entry = commitMap.get(h);
+                if (entry) {
+                    const data = entry.parsed;
+                    if (data.parent) nextHeadQueue.push(data.parent);
+                    if (data.parents) nextHeadQueue.push(...data.parents);
+                }
+            }
+        }
+        headQueue = [...new Set(nextHeadQueue)];
+
+        const nextBaseQueue = [];
+        for (const h of baseQueue) {
+            if (!baseAncestors.has(h)) {
+                baseAncestors.add(h);
+                if (headAncestors.has(h)) {
+                    foundIntersection = true;
+                    commonAncestors.push(h);
+                }
+                const entry = commitMap.get(h);
+                if (entry) {
+                    const data = entry.parsed;
+                    if (data.parent) nextBaseQueue.push(data.parent);
+                    if (data.parents) nextBaseQueue.push(...data.parents);
+                }
+            }
+        }
+        baseQueue = [...new Set(nextBaseQueue)];
+    }
+
+    const uniqueCommon = [...new Set(commonAncestors)];
+    uniqueCommon.sort((a, b) => {
+        const dateA = new Date(commitMap.get(a)?.parsed?.date || commitMap.get(a)?.createdAt || 0);
+        const dateB = new Date(commitMap.get(b)?.parsed?.date || commitMap.get(b)?.createdAt || 0);
+        return dateB - dateA;
+    });
+
+    const lcaHash = uniqueCommon.length > 0 ? uniqueCommon[0] : null;
+
+    const commits = [];
+    for (const h of headAncestors) {
+        if (!baseAncestors.has(h)) {
+            const entry = commitMap.get(h);
+            if (entry) {
+                commits.push({
+                    hash: h,
+                    message: entry.parsed.message,
+                    author: entry.parsed.author || 'Contributor',
+                    date: entry.parsed.date || entry.createdAt,
+                    authorProfilePicture: null
+                });
             }
         }
     }
-    return null;
+    commits.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return { lcaHash, commits, commitMap };
 }
 
 // Fetch and flatten a tree from MongoDB iteratively using batch fetches (Resolves N+1 query problem)
@@ -144,7 +243,8 @@ async function buildAndSaveTree(repoId, flatTree, userId) {
 }
 
 module.exports = {
-    findCommonAncestor,
+    getCommitGraph,
+    generateUnifiedDiff,
     flattenTree,
     buildAndSaveTree
 };

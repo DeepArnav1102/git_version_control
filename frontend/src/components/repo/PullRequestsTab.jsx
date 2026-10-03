@@ -1,28 +1,84 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GitPullRequest, Plus, Search, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { Search, X, ChevronDown, PanelLeftClose, GitPullRequest } from 'lucide-react';
 import apiClient from '../../lib/axios';
 import { jsonToast } from '../../lib/jsonToast';
+import useAuthStore from '../../store/useAuthStore';
+
+import PRSidebar from './pr/PRSidebar';
+import PRFilterBar from './pr/PRFilterBar';
+import PRListItem from './pr/PRListItem';
+import PRCreateView from './pr/PRCreateView';
+import PRDetailView from './pr/PRDetailView';
 
 export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, branches, repoId }) {
-  const [prs, setPrs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [viewState, setViewState] = useState('list'); // 'list', 'create', 'detail'
-  const [selectedPr, setSelectedPr] = useState(null);
+  const { user } = useAuthStore();
 
-  // Create PR form state
-  const [newPr, setNewPr] = useState({
-    title: '',
-    description: '',
-    sourceBranch: '',
-    targetBranch: 'main'
-  });
+  // Data
+  const [prs, setPrs] = useState([]);
+  const [prMetadata, setPrMetadata] = useState({ users: [], labels: [] });
+  const [loading, setLoading] = useState(true);
+
+  // View
+  const [viewState, setViewState] = useState('list'); // 'list' | 'create' | 'detail'
+  const [selectedPr, setSelectedPr] = useState(null);
+  const [selectedPrCommits, setSelectedPrCommits] = useState([]);
+  const [mergeConflict, setMergeConflict] = useState(null);
+  const [merging, setMerging] = useState(false);
+
+  // Filters
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeState, setActiveState] = useState('open');
+  const [searchQuery, setSearchQuery] = useState('is:pr state:open');
+  const [sortState, setSortState] = useState('newest');
+  const [activeLabel, setActiveLabel] = useState(null);
+  const [activeAuthor, setActiveAuthor] = useState(null);
+  const [activeAssignee, setActiveAssignee] = useState(null);
+  const [activeReviewer, setActiveReviewer] = useState(null);
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Create form
+  const [newPr, setNewPr] = useState({ title: '', description: '', sourceBranch: '', targetBranch: 'main' });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    if (branches && branches.length > 0) {
+      const defBranch = branches.find(b => b.isDefault)?.name || branches.find(b => b.name === 'main' || b.name === 'master')?.name || branches[0].name;
+      setNewPr(prev => ({ ...prev, targetBranch: defBranch }));
+    }
+  }, [branches]);
+
+  // ─── API ────────────────────────────────────────────────────────────────────
 
   const fetchPRs = async () => {
     try {
       setLoading(true);
-      const res = await apiClient.get(`/repos/${owner}/${repo}/pulls`);
+      const params = new URLSearchParams();
+
+      if (activeFilter === 'authored' && user) params.append('author', user._id);
+      else if (activeAuthor) params.append('author', activeAuthor);
+
+      if (activeFilter === 'assigned' && user) params.append('assignee', user._id);
+      else if (activeAssignee) params.append('assignee', activeAssignee);
+
+      if (activeFilter === 'reviewing' && user) params.append('reviewer', user._id);
+      else if (activeReviewer) params.append('reviewer', activeReviewer);
+
+      if (activeFilter === 'involves' && user) params.append('involves', user._id);
+      if (activeLabel) params.append('label', activeLabel);
+      if (sortState !== 'newest') params.append('sort', sortState);
+      params.append('page', page);
+      params.append('limit', 30);
+
+      const url = `/repos/${owner}/${repo}/pulls${params.toString() ? `?${params}` : ''}`;
+      const res = await apiClient.get(url);
       setPrs(res.data.prs || []);
+      if (res.data.metadata) {
+        setPrMetadata(res.data.metadata);
+        setTotalPages(res.data.metadata.totalPages || 1);
+      }
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Failed to load pull requests');
     } finally {
@@ -30,18 +86,52 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
     }
   };
 
+  useEffect(() => { fetchPRs(); }, [owner, repo, activeFilter, activeLabel, activeAuthor, activeAssignee, activeReviewer, sortState, user, page]);
+
+  // Sync search query display
   useEffect(() => {
-    fetchPRs();
-  }, [owner, repo]);
+    const filterParts = { authored: 'author:@me', assigned: 'assignee:@me', reviewing: 'reviewer:@me', involves: 'involves:@me' };
+    let query = `is:pr${activeState !== 'all' ? ` state:${activeState}` : ''}`;
+    if (filterParts[activeFilter]) query += ` ${filterParts[activeFilter]}`;
+    else {
+      if (activeAuthor) query += ` author:${activeAuthor}`;
+      if (activeAssignee) query += ` assignee:${activeAssignee}`;
+      if (activeReviewer) query += ` reviewer:${activeReviewer}`;
+    }
+    if (activeLabel) query += ` label:${activeLabel}`;
+    setSearchQuery(query);
+  }, [activeFilter, activeState, activeLabel, activeAuthor, activeAssignee, activeReviewer]);
+
+  const handleSearchSubmit = (e) => {
+    if (e.key !== 'Enter') return;
+    const q = searchQuery.toLowerCase();
+    if (q.includes('state:closed') || q.includes('state:merged')) setActiveState('closed');
+    else if (q.includes('state:open')) setActiveState('open');
+    else setActiveState('all');
+
+    const isMe = q.includes(':@me') || (user && q.includes(`:${user.username.toLowerCase()}`));
+    let newFilter = 'all';
+    if (q.includes('author:') && isMe) newFilter = 'authored';
+    else if (q.includes('assignee:') && isMe) newFilter = 'assigned';
+    else if (q.includes('reviewer:') && isMe) newFilter = 'reviewing';
+    else if (q.includes('involves:') && isMe) newFilter = 'involves';
+    setActiveFilter(newFilter);
+
+    const authorMatch = q.match(/author:([^\s:]+)/);
+    setActiveAuthor(authorMatch && !isMe ? authorMatch[1] : null);
+    const assigneeMatch = q.match(/assignee:([^\s:]+)/);
+    setActiveAssignee(assigneeMatch && !isMe ? assigneeMatch[1] : null);
+    const reviewerMatch = q.match(/reviewer:([^\s:]+)/);
+    setActiveReviewer(reviewerMatch && !isMe ? reviewerMatch[1] : null);
+    const labelMatch = q.match(/label:([^\s:]+)/);
+    setActiveLabel(labelMatch ? labelMatch[1] : null);
+    setPage(1); // Reset page on new search
+  };
 
   const handleCreatePR = async (e) => {
     e.preventDefault();
     try {
-      const res = await apiClient.post(`/repos/${owner}/${repo}/pulls`, {
-        ...newPr,
-        sourceOwner: owner,
-        sourceRepo: repo,
-      });
+      await apiClient.post(`/repos/${owner}/${repo}/pulls`, { ...newPr, sourceOwner: owner, sourceRepo: repo });
       jsonToast.success('Pull request created!');
       setViewState('list');
       fetchPRs();
@@ -50,35 +140,69 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
     }
   };
 
+  const fetchPRDetails = async (pr) => {
+    setSelectedPr(pr);
+    setViewState('detail');
+    setMergeConflict(null);
+    setSelectedPrCommits([]);
+    try {
+      const [prRes, commitsRes] = await Promise.all([
+        apiClient.get(`/repos/${owner}/${repo}/pulls/${pr._id}`),
+        apiClient.get(`/repos/${owner}/${repo}/pulls/${pr._id}/commits`),
+      ]);
+      setSelectedPr(prRes.data.pr);
+      setSelectedPrCommits(commitsRes.data.commits || []);
+    } catch {
+      jsonToast.error('Failed to load pull request details');
+    }
+  };
+
   const handleMerge = async (id) => {
     try {
+      setMerging(true);
+      setMergeConflict(null);
       const res = await apiClient.post(`/repos/${owner}/${repo}/pulls/${id}/merge`);
       jsonToast.success(res.data.message || 'Merged successfully!');
       fetchPRs();
-      setSelectedPr(null);
-      setViewState('list');
+      setSelectedPr(prev => ({ ...prev, state: 'merged' }));
     } catch (err) {
-      jsonToast.error(err?.response?.data?.message || 'Merge failed');
+      if (err?.response?.status === 409) {
+        setMergeConflict({ message: err.response.data.message || 'Merge conflict', files: err.response.data.conflictFiles || [] });
+      } else {
+        jsonToast.error(err?.response?.data?.message || 'Merge failed');
+      }
+    } finally {
+      setMerging(false);
     }
   };
 
   const handleClose = async (id) => {
     try {
-      const res = await apiClient.patch(`/repos/${owner}/${repo}/pulls/${id}`, { state: 'closed' });
+      await apiClient.patch(`/repos/${owner}/${repo}/pulls/${id}`, { state: 'closed' });
       jsonToast.success('Pull request closed');
       fetchPRs();
-      if (selectedPr && selectedPr._id === id) {
-          setSelectedPr({...selectedPr, state: 'closed'});
-      }
+      if (selectedPr?._id === id) setSelectedPr(prev => ({ ...prev, state: 'closed' }));
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Close failed');
     }
   };
 
+  // ─── Derived ─────────────────────────────────────────────────────────────────
+
+  const openCount = prs.filter(p => p.state === 'open').length;
+  const closedCount = prs.filter(p => p.state === 'closed' || p.state === 'merged').length;
+  const displayedPrs = prs.filter(p => {
+    if (activeState === 'open') return p.state === 'open';
+    if (activeState === 'closed') return p.state === 'closed' || p.state === 'merged';
+    return true;
+  });
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <div className="w-full font-sans">
       <AnimatePresence mode="wait">
-        
+
         {/* LIST VIEW */}
         {viewState === 'list' && (
           <motion.div
@@ -86,69 +210,134 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="w-full"
+            className="w-full bg-transparent text-gray-900 overflow-hidden"
           >
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-              <div className="relative w-full md:w-96">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search pull requests..."
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#fd8c73]/20 focus:border-[#fd8c73] transition-all"
-                />
-              </div>
-              <button
-                onClick={() => setViewState('create')}
-                className="flex items-center gap-2 bg-[#1f2328] hover:bg-[#24292e] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-              >
-                <Plus size={16} /> New pull request
-              </button>
-            </div>
+            <div className="flex flex-col md:flex-row min-h-[500px]">
+              {/* Sidebar */}
+              <AnimatePresence initial={false}>
+                {isSidebarOpen && (
+                  <PRSidebar
+                    activeFilter={activeFilter}
+                    setActiveFilter={setActiveFilter}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                  />
+                )}
+              </AnimatePresence>
 
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center gap-4 text-sm font-medium text-gray-600">
-                <span className="flex items-center gap-2 text-gray-900"><GitPullRequest size={16}/> {prs.filter(p => p.state === 'open').length} Open</span>
-                <span className="flex items-center gap-2"><CheckCircle size={16}/> {prs.filter(p => p.state === 'merged').length} Merged</span>
-                <span className="flex items-center gap-2"><XCircle size={16}/> {prs.filter(p => p.state === 'closed').length} Closed</span>
-              </div>
-              
-              <div className="divide-y divide-gray-100">
-                {loading ? (
-                  <div className="p-8 text-center text-gray-500 text-sm">Loading pull requests...</div>
-                ) : prs.length === 0 ? (
-                  <div className="p-12 text-center flex flex-col items-center">
-                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                      <GitPullRequest size={24} className="text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">No pull requests</h3>
-                    <p className="text-gray-500 text-sm max-w-sm">There are no pull requests in this repository yet. Create one to propose changes to the code.</p>
+              {/* Main Content */}
+              <div className="flex-1 p-6 min-w-0">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-3">
+                    {!isSidebarOpen && (
+                      <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 rounded-md transition-colors border border-gray-200"
+                        title="Expand sidebar"
+                      >
+                        <PanelLeftClose size={16} className="rotate-180" />
+                      </button>
+                    )}
+                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">All pull requests</h2>
                   </div>
-                ) : (
-                  prs.map(pr => (
-                    <div 
-                      key={pr._id} 
-                      onClick={() => { setSelectedPr(pr); setViewState('detail'); }}
-                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors flex items-start gap-4"
-                    >
-                      <div className="mt-1">
-                        {pr.state === 'open' ? (
-                          <GitPullRequest className="text-green-500" size={20} />
-                        ) : pr.state === 'merged' ? (
-                          <GitPullRequest className="text-purple-500" size={20} />
-                        ) : (
-                          <XCircle className="text-red-500" size={20} />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-base font-semibold text-gray-900 hover:text-[#fd8c73] transition-colors">{pr.title}</h4>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                          <span>#{pr._id.slice(-4)} opened {new Date(pr.createdAt).toLocaleDateString()} by {pr.author?.username}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1 font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{pr.sourceBranch} <ArrowRight size={10}/> {pr.targetBranch}</span>
+                  <button
+                    onClick={() => setViewState('create')}
+                    className="bg-[#0969da] hover:bg-[#0353a4] text-white px-3 py-1.5 rounded-md text-xs font-semibold transition-colors shadow-sm border border-[rgba(0,0,0,0.1)]"
+                  >
+                    New pull request
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div className="relative mb-4 flex rounded-md border border-gray-300 overflow-hidden focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all bg-gray-50">
+                  <div className="px-3 py-1.5 text-xs text-gray-600 bg-gray-100 border-r border-gray-300 cursor-pointer hover:text-gray-900 flex items-center gap-1">
+                    Filters <ChevronDown size={12} />
+                  </div>
+                  <div className="flex-1 flex items-center px-3 py-1.5 bg-gray-50">
+                    <Search size={14} className="text-gray-400 mr-2" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      onKeyDown={handleSearchSubmit}
+                      className="bg-transparent border-none outline-none text-xs text-gray-900 w-full placeholder-gray-500"
+                    />
+                    <X
+                      size={14}
+                      className="text-gray-400 hover:text-gray-600 cursor-pointer ml-2"
+                      onClick={() => { setSearchQuery('is:pr state:open'); setActiveState('open'); setActiveFilter('all'); setActiveAuthor(null); setActiveAssignee(null); setActiveLabel(null); }}
+                    />
+                  </div>
+                </div>
+
+                {/* List Container */}
+                <div className="border border-gray-300 rounded-md overflow-visible bg-white">
+                  <PRFilterBar
+                    activeState={activeState} setActiveState={setActiveState}
+                    openCount={openCount} closedCount={closedCount}
+                    activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown}
+                    prMetadata={prMetadata}
+                    setActiveAuthor={setActiveAuthor} setActiveFilter={setActiveFilter}
+                    setActiveLabel={setActiveLabel}
+                    setActiveAssignee={setActiveAssignee}
+                    sortState={sortState} setSortState={setSortState}
+                  />
+
+                  <div className="divide-y divide-gray-200">
+                    {loading ? (
+                      [1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="p-3 flex items-start gap-3 bg-white">
+                          <div className="mt-0.5"><div className="w-4 h-4 rounded-full bg-gray-200 animate-pulse" /></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2 max-w-[400px]" />
+                              <div className="h-3 bg-gray-200 rounded-full animate-pulse w-16" />
+                            </div>
+                            <div className="flex items-center justify-between w-full mt-1">
+                              <div className="h-3 bg-gray-200 rounded animate-pulse w-1/3 max-w-[300px]" />
+                              <div className="h-5 w-5 bg-gray-200 rounded-full animate-pulse" />
+                            </div>
+                          </div>
                         </div>
+                      ))
+                    ) : displayedPrs.length === 0 ? (
+                      <div className="p-16 text-center flex flex-col items-center">
+                        <GitPullRequest size={28} className="text-gray-400 mb-4 stroke-[1.5]" />
+                        <h3 className="text-[16px] font-bold text-gray-900 mb-2 tracking-tight">No pull requests matched your search</h3>
+                        <p className="text-gray-500 text-xs max-w-sm">
+                          Try a different search query.{' '}
+                          <a href="#" className="text-[#0969da] hover:underline">Learn more about searching and filtering pull requests.</a>
+                        </p>
                       </div>
-                    </div>
-                  ))
+                    ) : (
+                      displayedPrs.map(pr => (
+                        <PRListItem key={pr._id} pr={pr} onClick={() => fetchPRDetails(pr)} />
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="mt-6 flex justify-center gap-2">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="px-3 py-1 text-xs border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-3 py-1 text-xs text-gray-600 border border-transparent flex items-center">
+                      Page {page} of {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      className="px-3 py-1 text-xs border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+                    >
+                      Next
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -157,189 +346,32 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
 
         {/* CREATE VIEW */}
         {viewState === 'create' && (
-          <motion.div
-            key="create"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            className="w-full max-w-3xl mx-auto"
-          >
-            <div className="mb-6">
-              <button onClick={() => setViewState('list')} className="text-sm text-gray-500 hover:text-gray-900 mb-4 inline-flex items-center gap-2">
-                ← Back to pull requests
-              </button>
-              <h2 className="text-2xl font-bold text-gray-900">Compare changes</h2>
-              <p className="text-gray-500 text-sm mt-1">Choose two branches to see what's changed or to start a new pull request.</p>
-            </div>
-
-            <form onSubmit={handleCreatePR} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="bg-gray-50 p-4 border-b border-gray-200 flex items-center gap-4">
-                 <div className="flex-1">
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">base (target)</label>
-                    <select 
-                      value={newPr.targetBranch} 
-                      onChange={e => setNewPr({...newPr, targetBranch: e.target.value})}
-                      className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white font-mono"
-                    >
-                      {branches?.map(b => (
-                        <option key={b.name} value={b.name}>{b.name}</option>
-                      ))}
-                    </select>
-                 </div>
-                 <div className="pt-5 text-gray-400">
-                    <ArrowRight size={20} />
-                 </div>
-                 <div className="flex-1">
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">compare (source)</label>
-                    <select 
-                      value={newPr.sourceBranch} 
-                      onChange={e => setNewPr({...newPr, sourceBranch: e.target.value})}
-                      className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white font-mono"
-                      required
-                    >
-                      <option value="" disabled>Select branch...</option>
-                      {branches?.map(b => (
-                        <option key={b.name} value={b.name}>{b.name}</option>
-                      ))}
-                    </select>
-                 </div>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Pull request title"
-                    required
-                    maxLength={255}
-                    value={newPr.title}
-                    onChange={e => setNewPr({...newPr, title: e.target.value})}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-[#fd8c73]/20 focus:border-[#fd8c73] transition-all font-semibold"
-                  />
-                </div>
-                <div>
-                  <textarea
-                    placeholder="Add a description..."
-                    rows={6}
-                    value={newPr.description}
-                    onChange={e => setNewPr({...newPr, description: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#fd8c73]/20 focus:border-[#fd8c73] transition-all resize-y"
-                  ></textarea>
-                </div>
-              </div>
-              
-              <div className="bg-gray-50 p-4 border-t border-gray-200 flex justify-end gap-3">
-                <button type="button" onClick={() => setViewState('list')} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
-                  Cancel
-                </button>
-                <button type="submit" disabled={!newPr.title || !newPr.sourceBranch} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm disabled:opacity-50">
-                  Create pull request
-                </button>
-              </div>
-            </form>
+          <motion.div key="create" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }}>
+            <PRCreateView
+              newPr={newPr} setNewPr={setNewPr}
+              branches={branches}
+              onSubmit={handleCreatePR}
+              onCancel={() => setViewState('list')}
+            />
           </motion.div>
         )}
 
         {/* DETAIL VIEW */}
         {viewState === 'detail' && selectedPr && (
-          <motion.div
-            key="detail"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="w-full"
-          >
-            <button onClick={() => setViewState('list')} className="text-sm text-gray-500 hover:text-gray-900 mb-4 inline-flex items-center gap-2">
-              ← Back to pull requests
-            </button>
-            
-            <div className="border-b border-gray-200 pb-6 mb-6">
-              <div className="flex justify-between items-start mb-3">
-                <h2 className="text-3xl font-bold text-gray-900">
-                  {selectedPr.title} <span className="text-gray-400 font-normal">#{selectedPr._id.slice(-4)}</span>
-                </h2>
-                {isOwner && selectedPr.state === 'open' && (
-                  <button onClick={() => handleClose(selectedPr._id)} className="px-3 py-1.5 border border-gray-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
-                    Close PR
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                {selectedPr.state === 'open' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500 text-white rounded-full text-sm font-medium">
-                    <GitPullRequest size={16}/> Open
-                  </span>
-                ) : selectedPr.state === 'merged' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500 text-white rounded-full text-sm font-medium">
-                    <GitPullRequest size={16}/> Merged
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-500 text-white rounded-full text-sm font-medium">
-                    <XCircle size={16}/> Closed
-                  </span>
-                )}
-                
-                <span className="text-gray-600 text-sm">
-                  <strong className="font-semibold text-gray-900">{selectedPr.author?.username}</strong> wants to merge into <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs text-gray-800">{selectedPr.targetBranch}</code> from <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs text-gray-800">{selectedPr.sourceBranch}</code>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col md:flex-row gap-6">
-              <div className="flex-1 space-y-6">
-                <div className="flex gap-4">
-                   <img src={selectedPr.author?.avatarUrl || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg'} alt="pfp" className="w-10 h-10 rounded-full border border-gray-200" />
-                   <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                     <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 text-sm text-gray-600">
-                        <strong className="text-gray-900">{selectedPr.author?.username}</strong> commented on {new Date(selectedPr.createdAt).toLocaleDateString()}
-                     </div>
-                     <div className="p-4 text-sm text-gray-800 whitespace-pre-wrap">
-                        {selectedPr.description || <em className="text-gray-400">No description provided.</em>}
-                     </div>
-                   </div>
-                </div>
-                
-                {selectedPr.state === 'open' && isOwner && (
-                  <div className="border border-green-200 bg-green-50 rounded-xl p-6 flex flex-col items-center justify-center text-center mt-8">
-                     <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-3">
-                       <CheckCircle size={24} />
-                     </div>
-                     <h3 className="text-lg font-bold text-gray-900 mb-1">This pull request can be merged</h3>
-                     <p className="text-sm text-gray-600 mb-4 max-w-sm">
-                       Our incredibly fast Rust engine has checked this branch and there are no conflicts with the base branch.
-                     </p>
-                     <button onClick={() => handleMerge(selectedPr._id)} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors w-full md:w-auto">
-                       Merge pull request
-                     </button>
-                  </div>
-                )}
-                
-                {selectedPr.state === 'merged' && (
-                  <div className="border border-purple-200 bg-purple-50 rounded-xl p-6 flex flex-col items-center justify-center text-center mt-8">
-                     <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-3">
-                       <GitPullRequest size={24} />
-                     </div>
-                     <h3 className="text-lg font-bold text-gray-900 mb-1">Pull request successfully merged</h3>
-                     <p className="text-sm text-purple-700 mb-4 max-w-sm">
-                       The commits were merged into {selectedPr.targetBranch} securely via the native Rust merge engine.
-                     </p>
-                  </div>
-                )}
-
-              </div>
-              
-              <div className="w-full md:w-64 flex-shrink-0">
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Reviewers</h4>
-                  <p className="text-sm text-gray-600">No reviewers</p>
-                  
-                  <div className="h-px bg-gray-200 my-4"></div>
-                  
-                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Assignees</h4>
-                  <p className="text-sm text-gray-600">No one assigned</p>
-                </div>
-              </div>
-            </div>
+          <motion.div key="detail" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="w-full">
+            <PRDetailView
+              selectedPr={selectedPr} setSelectedPr={setSelectedPr}
+              selectedPrCommits={selectedPrCommits}
+              mergeConflict={mergeConflict}
+              merging={merging}
+              isOwner={isOwner}
+              user={user}
+              owner={owner} repo={repo}
+              onBack={() => setViewState('list')}
+              onMerge={handleMerge}
+              onClose={handleClose}
+              fetchPRs={fetchPRs}
+            />
           </motion.div>
         )}
 
