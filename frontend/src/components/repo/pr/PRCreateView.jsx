@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { ArrowRight, Check, X, GitCommit, FileCode, Users, AlertTriangle, File } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github.css';
+
+const getLanguage = (filename) => {
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+    py: 'python', rb: 'ruby', java: 'java', cpp: 'cpp', c: 'c', cs: 'csharp',
+    go: 'go', rs: 'rust', php: 'php', html: 'html', css: 'css', json: 'json',
+    md: 'markdown', sh: 'bash', yml: 'yaml', yaml: 'yaml'
+  };
+  return map[ext] || 'plaintext';
+};
 
 const BranchSelect = ({ value, onChange, options, placeholder, label }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -91,6 +104,16 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
     const lines = file.diffText ? file.diffText.split('\n') : [];
     const isLarge = lines.length > 100;
     const [expanded, setExpanded] = useState(!isLarge);
+    const language = getLanguage(file.path);
+
+    const highlightLine = (text) => {
+      try {
+        if (!text) return ' ';
+        return hljs.highlight(text, { language, ignoreIllegals: true }).value;
+      } catch (e) {
+        return text || ' ';
+      }
+    };
 
     const renderDiffLine = (line, idx) => {
       if (line.startsWith('@@')) {
@@ -102,23 +125,24 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
         );
       } else if (line.startsWith('+')) {
         return (
-          <div key={idx} className="bg-[#e6ffed] hover:bg-[#dcf4e3] text-gray-900 px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
+          <div key={idx} className="bg-[#e6ffed] hover:bg-[#dcf4e3] px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
             <span className="select-none text-green-500 mr-3 w-4 inline-block text-right">+</span>
-            <span>{line.substring(1)}</span>
+            <span dangerouslySetInnerHTML={{ __html: highlightLine(line.substring(1)) }} className="text-gray-900" />
           </div>
         );
       } else if (line.startsWith('-')) {
         return (
-          <div key={idx} className="bg-[#ffeef0] hover:bg-[#fcdde1] text-gray-900 px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
+          <div key={idx} className="bg-[#ffeef0] hover:bg-[#fcdde1] px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
             <span className="select-none text-red-500 mr-3 w-4 inline-block text-right">-</span>
-            <span>{line.substring(1)}</span>
+            <span dangerouslySetInnerHTML={{ __html: highlightLine(line.substring(1)) }} className="text-gray-900" />
           </div>
         );
       }
+      const rawText = line.length > 0 && (line.startsWith(' ') || line.startsWith('\\')) ? line.substring(1) : line;
       return (
-        <div key={idx} className="bg-white hover:bg-gray-50 text-gray-700 px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
+        <div key={idx} className="bg-white hover:bg-gray-50 px-3 py-0.5 whitespace-pre font-mono text-[11px] flex transition-colors">
           <span className="select-none text-gray-300 mr-3 w-4 inline-block text-right"> </span>
-          <span>{line.length > 0 && (line.startsWith(' ') || line.startsWith('\\')) ? line.substring(1) : line}</span>
+          <span dangerouslySetInnerHTML={{ __html: highlightLine(rawText) }} className="text-gray-700" />
         </div>
       );
     };
