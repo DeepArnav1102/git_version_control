@@ -24,16 +24,24 @@ export default function RepoHeader({
   handleOpenRepoInCodespace,
   loadingCodespace,
   isRepo100PercentPython,
-  currentUser
+  currentUser,
+  setCurrentBranch,
+  handleCreateBranch
 }) {
   const dropdownRef = useRef(null);
+  const branchDropdownRef = useRef(null);
   const [copiedRemote, setCopiedRemote] = useState(false);
   const [copiedPush, setCopiedPush] = useState(false);
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+  const [branchSearch, setBranchSearch] = useState('');
 
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowCloneDropdown(false);
+      }
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target)) {
+        setShowBranchDropdown(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -41,6 +49,10 @@ export default function RepoHeader({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [setShowCloneDropdown]);
+
+  const branches = repoData.branches || [];
+  const filteredBranches = branches.filter(b => b.name.toLowerCase().includes(branchSearch.toLowerCase()));
+  const exactMatch = branches.some(b => b.name.toLowerCase() === branchSearch.toLowerCase());
 
   const handleCopyRemote = () => {
     copyToClipboard(`rusty remote add origin ${remoteUrl}`);
@@ -177,13 +189,73 @@ export default function RepoHeader({
         {!isEmpty && (
           <>
             {/* Branch selector */}
-            <button
-              data-branch-selector
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-            >
-              <GitBranch size={13} />
-              <span>{currentBranch}</span>
-            </button>
+            <div className="relative" ref={branchDropdownRef}>
+              <button
+                onClick={() => {
+                  setShowBranchDropdown(!showBranchDropdown);
+                  setBranchSearch('');
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-semibold text-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <GitBranch size={13} />
+                <span>{currentBranch}</span>
+                <ChevronDown size={13} className="text-gray-500 ml-1" />
+              </button>
+
+              {showBranchDropdown && (
+                <div className="absolute left-0 top-full mt-2 w-64 bg-white rounded-xl border border-gray-200 shadow-xl z-50 animate-in fade-in slide-in-from-top-2 duration-150 overflow-hidden flex flex-col max-h-[300px]">
+                  <div className="p-2 border-b border-gray-200 bg-gray-50">
+                    <input
+                      type="text"
+                      placeholder="Find or create a branch..."
+                      className="w-full bg-white border border-gray-300 rounded text-xs px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={branchSearch}
+                      onChange={(e) => setBranchSearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1 p-1">
+                    {filteredBranches.map(branch => (
+                      <button
+                        key={branch.name}
+                        onClick={() => {
+                          setCurrentBranch(branch.name);
+                          setShowBranchDropdown(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs rounded-md flex items-center justify-between group transition-colors cursor-pointer ${
+                          branch.name === currentBranch ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <GitBranch size={12} className={branch.name === currentBranch ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-600'} />
+                          <span className="truncate">{branch.name}</span>
+                        </div>
+                        {branch.name === currentBranch && <Check size={12} />}
+                      </button>
+                    ))}
+                    {filteredBranches.length === 0 && !branchSearch && (
+                      <div className="px-3 py-4 text-center text-xs text-gray-500">
+                        No branches found
+                      </div>
+                    )}
+                  </div>
+                  {branchSearch && !exactMatch && isOwner && (
+                    <div className="p-2 border-t border-gray-200 bg-gray-50">
+                      <button
+                        onClick={() => {
+                          handleCreateBranch(branchSearch);
+                          setShowBranchDropdown(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 bg-white hover:bg-blue-50 border border-gray-300 hover:border-blue-300 text-blue-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        <GitBranch size={13} />
+                        <span className="truncate">Create branch: <span className="font-bold">{branchSearch}</span></span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Commits count */}
             <button

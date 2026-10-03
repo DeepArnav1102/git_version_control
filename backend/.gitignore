@@ -87,3 +87,8 @@ Thumbs.db
 
 # IDE User Data
 workspace_data/
+
+# Rust / N-API Build Artifacts
+native-merge/target/
+*.node
+.napi-rs-filesystem-reconciliation*

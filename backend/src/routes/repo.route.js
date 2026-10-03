@@ -14,6 +14,8 @@ const {
     storeObject,
     updateRef,
     getRemoteRef,
+    getRemoteRefs,
+    deleteRemoteRef,
     getObject,
     requestDeleteOtp,
     deleteRepo,
@@ -22,10 +24,18 @@ const {
     syncRepo,
     deleteRepoFile,
     downloadRepoZip,
+    compareBranches,
+    inviteCollaborator,
+    acceptInvite,
+    removeCollaborator,
 } = require('../controllers/repo.controller');
 const { otpLimiter } = require('../middlewares/rateLimit.middleware');
+const prRouter = require('./pr.route');
 
 const router = express.Router();
+
+// Mount Pull Request routes
+router.use('/:owner/:repo/pulls', prRouter);
 
 // ─── Web API ──────────────────────────────────────────────────────────
 
@@ -67,6 +77,10 @@ router.get('/user/:username', protectOptional, getReposByUsername);
  *     tags: [Repositories]
  */
 router.get('/:owner/:repo', protectOptional, getRepoDetails);
+
+router.post('/:owner/:repo/collaborators/invite', protect, inviteCollaborator);
+router.post('/:owner/:repo/collaborators/accept', protect, acceptInvite);
+router.delete('/:owner/:repo/collaborators/:userId', protect, removeCollaborator);
 
 /**
  * @swagger
@@ -151,6 +165,15 @@ router.get('/:owner/:repo/zip/:ref', protectOptional, downloadRepoZip);
 
 /**
  * @swagger
+ * /api/v1/repos/{owner}/{repo}/compare/{compareString}:
+ *   get:
+ *     summary: Compare two branches or commits
+ *     tags: [Repositories]
+ */
+router.get('/:owner/:repo/compare/:compareString', protectOptional, compareBranches);
+
+/**
+ * @swagger
  * /api/v1/repos/{owner}/{repo}/blob/{hash}:
  *   get:
  *     summary: Get a repository blob by hash
@@ -215,7 +238,23 @@ router.post('/:owner/:repo/objects', protect, storeObject);
 router.post('/:owner/:repo/refs', protect, updateRef);
 
 // ─── CLI Fetch Endpoints (Full path: :owner/:repo) ────────────────────
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs:
+ *   get:
+ *     summary: Get all remote branch references (CLI fetch)
+ *     tags: [CLI]
+ */
+router.get('/:owner/:repo/refs', protect, getRemoteRefs);
 
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/refs/{branch}:
+ *   delete:
+ *     summary: Delete a remote branch reference (CLI)
+ *     tags: [CLI]
+ */
+router.delete('/:owner/:repo/refs/:branch', protect, deleteRemoteRef);
 /**
  * @swagger
  * /api/v1/repos/{owner}/{repo}/refs/{branch}:

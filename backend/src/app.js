@@ -11,6 +11,16 @@ const errorHandler = require('./middlewares/error.middleware');
 
 const app = express();
 const setupSwagger = require('./swagger');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting: max 1000 requests per 15 minutes per IP
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    message: { success: false, message: 'Too many requests, please try again later.' }
+});
+
+app.use('/api', limiter);
 
 // Initialize Swagger docs
 setupSwagger(app);

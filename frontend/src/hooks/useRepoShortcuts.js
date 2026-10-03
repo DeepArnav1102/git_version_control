@@ -63,9 +63,13 @@ export default function useRepoShortcuts(actions) {
             break;
           case '2':
             e.preventDefault();
-            actions.onSwitchToCommits?.();
+            actions.onSwitchToPullRequests?.();
             break;
           case '3':
+            e.preventDefault();
+            actions.onSwitchToCommits?.();
+            break;
+          case '4':
             e.preventDefault();
             actions.onSwitchToSettings?.();
             break;

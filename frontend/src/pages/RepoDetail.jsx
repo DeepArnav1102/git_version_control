@@ -44,6 +44,7 @@ import RepoHeader from '../components/repo/RepoHeader';
 import CommitsTab from '../components/repo/CommitsTab';
 import SettingsTab from '../components/repo/SettingsTab';
 import CodeTab from '../components/repo/CodeTab';
+import PullRequestsTab from '../components/repo/PullRequestsTab';
 import { calculateLanguages } from '../utils/languageUtils';
 import useRepoShortcuts from '../hooks/useRepoShortcuts';
 
@@ -272,6 +273,34 @@ export default function RepoDetail() {
       link.parentNode.removeChild(link);
     } catch (err) {
       jsonToast.error('Failed to download ZIP');
+    }
+  };
+
+  const handleCreateBranch = async (newBranchName) => {
+    const sourceBranch = repoData.branches?.find(b => b.name === currentBranch);
+    const commitHash = sourceBranch ? sourceBranch.commitHash : null;
+
+    if (!commitHash) {
+      jsonToast.error("Could not find commit hash for current branch.");
+      return;
+    }
+
+    try {
+      const res = await apiClient.post(`/repos/${owner}/${repo}/refs`, {
+        branch: newBranchName,
+        commitHash: commitHash
+      });
+      jsonToast.success(`Branch '${newBranchName}' created successfully!`);
+      
+      // Update local repoData with new branch
+      setRepoData(prev => ({
+        ...prev,
+        branches: [...(prev.branches || []), { name: newBranchName, commitHash, updatedAt: new Date().toISOString() }]
+      }));
+      
+      setCurrentBranch(newBranchName);
+    } catch (err) {
+      jsonToast.error(err?.response?.data?.message || "Failed to create branch");
     }
   };
 
@@ -522,6 +551,7 @@ export default function RepoDetail() {
     },
     onToggleSidebar: () => setSidebarOpen(prev => !prev),
     onSwitchToCode: () => handleTabChange('code'),
+    onSwitchToPullRequests: () => handleTabChange('pull-requests'),
     onSwitchToCommits: () => handleTabChange('commits'),
     onSwitchToSettings: () => { if (isOwner) handleTabChange('settings'); },
     onFocusBranchSelector: () => {
@@ -660,6 +690,8 @@ export default function RepoDetail() {
         loadingCodespace={loadingCodespace}
         isRepo100PercentPython={isRepo100PercentPython}
         currentUser={user}
+        setCurrentBranch={setCurrentBranch}
+        handleCreateBranch={handleCreateBranch}
       />
 
       {/* Horizontal Tabs */}
@@ -670,6 +702,13 @@ export default function RepoDetail() {
             }`}
         >
           <Code size={16} /> Code
+        </button>
+        <button
+          onClick={() => handleTabChange('pull-requests')}
+          className={`flex items-center gap-2 pb-3 px-1 text-sm font-medium border-b-2 transition-colors cursor-pointer ${activeTab === 'pull-requests' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+        >
+          <GitPullRequest size={16} /> Pull requests
         </button>
         <button
           onClick={() => handleTabChange('commits')}
@@ -740,11 +779,16 @@ export default function RepoDetail() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2 }}
-            className="mt-6 bg-white border border-gray-200 rounded-xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[300px]"
+            className="mt-6"
           >
-            <GitPullRequest size={32} className="text-gray-300 mb-3" />
-            <h3 className="text-lg font-bold text-gray-800">No pull requests yet</h3>
-            <p className="text-sm text-gray-500 mt-1">Welcome to pull requests!</p>
+            <PullRequestsTab 
+              owner={owner}
+              repo={repo}
+              isOwner={isOwner}
+              currentBranch={currentBranch}
+              branches={repoData?.branches || []}
+              repoId={repoData?._id}
+            />
           </motion.div>
         )}
 

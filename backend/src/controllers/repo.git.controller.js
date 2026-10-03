@@ -5,8 +5,8 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
 const mongoose = require('mongoose');
-const { generateAndSendOtp, verifyOtp } = require('../services/otp.service');
 const { resolveUser, resolveRepo } = require('../utils/repoHelpers');
+const { getCommitGraph, generateUnifiedDiff, flattenTree } = require('../utils/gitHelpers');
 
 async function getLastCommitsForEntries(repoId, startCommitHash, pathSegments, entries) {
     const unresolved = new Set(entries.map(e => e.name));
@@ -558,4 +558,162 @@ const downloadRepoZip = asyncHandler(async (req, res) => {
     res.status(200).send(zipBuffer);
 });
 
-module.exports = { getRepoTree, getRepoBlob, getRepoCommits, deleteRepoFile, downloadRepoZip };
+const compareBranches = asyncHandler(async (req, res) => {
+    const { owner, repo, compareString } = req.params;
+    
+    // Security Validation: prevent regex/DOS payloads in compare string
+    if (compareString.length > 512 || !/^[a-zA-Z0-9_\-\.\/]+\.\.\.[a-zA-Z0-9_\-\.\/]+$/.test(compareString)) {
+        throw new ApiError(400, 'Invalid compare string format or length. Use base...head');
+    }
+    const [baseRef, headRef] = compareString.split('...');
+
+    const repoDoc = await resolveRepo(owner, repo, req.user);
+    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+
+    const resolveCommitHash = async (ref) => {
+        const branch = repoDoc.branches.find(b => b.name === ref);
+        if (branch) return branch.commitHash;
+        const commitObj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: ref, type: 'commit' });
+        if (commitObj) return ref;
+        return null;
+    };
+
+    const baseHash = await resolveCommitHash(baseRef);
+    const headHash = await resolveCommitHash(headRef);
+
+    if (!baseHash || !headHash) {
+        throw new ApiError(404, 'One or both branches/commits not found');
+    }
+
+    // Optimization: Traverse the graph efficiently in chunks without loading all commits
+    const { lcaHash, commits, commitMap } = await getCommitGraph(repoDoc._id, headHash, baseHash);
+
+    if (lcaHash === headHash) {
+        return res.status(200).json({ success: true, data: { upToDate: true } });
+    }
+    if (lcaHash === baseHash && commits.length === 0) {
+        return res.status(200).json({ success: true, data: { identical: true } });
+    }
+
+    // Assign author profile pictures
+    const uniqueAuthors = [...new Set(commits.map(c => c.author.toLowerCase()))];
+    const authorUsers = await User.find({ username: { $in: uniqueAuthors } }).select('username profilePicture');
+    const authorPfpMap = {};
+    authorUsers.forEach(u => authorPfpMap[u.username.toLowerCase()] = u.profilePicture || null);
+    commits.forEach(c => c.authorProfilePicture = authorPfpMap[c.author.toLowerCase()] || null);
+
+    // Tree diffing
+    const lcaCommit = commitMap.get(lcaHash);
+    const headCommit = commitMap.get(headHash);
+    
+    const baseTreeHash = lcaCommit ? lcaCommit.parsed.tree : null;
+    const headTreeHash = headCommit ? headCommit.parsed.tree : null;
+
+    const baseTreeFlat = await flattenTree(repoDoc._id, baseTreeHash);
+    const headTreeFlat = await flattenTree(repoDoc._id, headTreeHash);
+
+    const allPaths = new Set([...Object.keys(baseTreeFlat), ...Object.keys(headTreeFlat)]);
+    const changedFiles = [];
+    
+    const isBinaryExt = (filename) => {
+        const ext = filename.split('.').pop().toLowerCase();
+        const binExts = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp', 'pdf', 'zip', 'tar', 'gz', 'mp4', 'mp3', 'exe', 'node', 'dll', 'so', 'dylib', 'ttf', 'woff', 'woff2'];
+        return binExts.includes(ext) || !filename.includes('.');
+    };
+
+    let totalAdditions = 0;
+    let totalDeletions = 0;
+
+    for (const path of allPaths) {
+        const bHash = baseTreeFlat[path];
+        const hHash = headTreeFlat[path];
+
+        if (bHash === hHash) continue; // No change
+
+        let status = 'modified';
+        if (!bHash) status = 'added';
+        if (!hHash) status = 'deleted';
+
+        let additions = 0;
+        let deletions = 0;
+        let diffText = '';
+        const isBinary = isBinaryExt(path);
+
+        if (!isBinary && status !== 'deleted') {
+            const getBlob = async (h) => {
+                if (!h) return '';
+                const obj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: h, type: 'blob' });
+                return obj ? obj.data : '';
+            };
+            const oldStr = await getBlob(bHash);
+            const newStr = await getBlob(hHash);
+            
+            const diffResult = generateUnifiedDiff(oldStr, newStr);
+            diffText = diffResult.diffText;
+            additions = diffResult.additions;
+            deletions = diffResult.deletions;
+        } else if (!isBinary && status === 'deleted') {
+            const obj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: bHash, type: 'blob' });
+            const oldStr = obj ? obj.data : '';
+            deletions = oldStr.split('\n').length;
+        }
+
+        totalAdditions += additions;
+        totalDeletions += deletions;
+
+        changedFiles.push({
+            path,
+            status,
+            additions,
+            deletions,
+            isBinary,
+            diffText: isBinary ? null : diffText
+        });
+    }
+
+    // Mergeability check
+    let mergeable = true;
+    let conflictFiles = [];
+    
+    // nativeMerge expects baseTree (LCA), oursTree (base branch), theirsTree (head branch)
+    const oursCommitHash = await resolveCommitHash(baseRef);
+    const oursCommitEntry = commitMap.get(oursCommitHash);
+    const oursTreeHash = oursCommitEntry ? oursCommitEntry.parsed.tree : null;
+    const oursTreeFlat = await flattenTree(repoDoc._id, oursTreeHash);
+
+    try {
+        const nativeMerge = require('../../native-merge.node');
+        const result = await nativeMerge.performMergeAsync({
+            baseTree: JSON.stringify(baseTreeFlat),
+            oursTree: JSON.stringify(oursTreeFlat),
+            theirsTree: JSON.stringify(headTreeFlat)
+        });
+        if (!result.success) {
+            mergeable = false;
+            conflictFiles = result.conflictFiles || [];
+        }
+    } catch (e) {
+        console.error('Merge check failed:', e);
+        mergeable = false;
+    }
+
+    res.status(200).json({
+        success: true,
+        data: {
+            upToDate: false,
+            identical: false,
+            mergeable,
+            conflictFiles,
+            commits,
+            files: changedFiles,
+            stats: {
+                totalAdditions,
+                totalDeletions,
+                filesChanged: changedFiles.length,
+                commitsCount: commits.length
+            }
+        }
+    });
+});
+
+module.exports = { getRepoTree, getRepoBlob, getRepoCommits, deleteRepoFile, downloadRepoZip, compareBranches };
