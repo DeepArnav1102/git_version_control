@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const PullRequest = require('../models/PullRequest.model');
+const PRComment = require('../models/PRComment.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
 const { resolveRepo } = require('../utils/repoHelpers');
@@ -10,7 +11,7 @@ const crypto = require('crypto');
 
 const createPullRequest = asyncHandler(async (req, res) => {
     const { owner, repo } = req.params;
-    const { title, description, sourceOwner, sourceRepo, sourceBranch, targetBranch } = req.body;
+    const { title, description, sourceOwner, sourceRepo, sourceBranch, targetBranch, assignees, reviewers, labels, milestone, project } = req.body;
 
     if (!title || !sourceOwner || !sourceRepo || !sourceBranch || !targetBranch) {
         throw new ApiError(400, 'Missing required fields');
@@ -29,7 +30,7 @@ const createPullRequest = asyncHandler(async (req, res) => {
     const sourceRepoDoc = await resolveRepo(sourceOwner, sourceRepo, req.user);
     if (!sourceRepoDoc) throw new ApiError(404, 'Source repository not found');
 
-    const pr = await PullRequest.create({
+    const prData = {
         title,
         description,
         sourceRepo: sourceRepoDoc._id,
@@ -37,7 +38,23 @@ const createPullRequest = asyncHandler(async (req, res) => {
         targetRepo: targetRepoDoc._id,
         targetBranch,
         author: req.user._id
-    });
+    };
+
+    if (assignees) prData.assignees = assignees;
+    if (reviewers) prData.reviewers = reviewers;
+    if (labels) {
+        if (!Array.isArray(labels)) {
+            throw new ApiError(400, 'Labels must be an array');
+        }
+        prData.labels = labels.filter(l => 
+            l && typeof l.name === 'string' && l.name.length > 0 && l.name.length <= 50 &&
+            (!l.color || /^#[0-9A-Fa-f]{3,6}$/i.test(l.color))
+        );
+    }
+    if (milestone) prData.milestone = milestone;
+    if (project) prData.project = project;
+
+    const pr = await PullRequest.create(prData);
 
     res.status(201).json({ success: true, pr });
 });
@@ -346,11 +363,45 @@ const mergePullRequest = asyncHandler(async (req, res) => {
     });
 });
 
+const getPullRequestComments = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const comments = await PRComment.find({ pullRequest: id })
+        .populate('author', 'username name email profilePicture avatar_url')
+        .sort({ createdAt: 1 });
+    
+    res.status(200).json({ success: true, comments });
+});
+
+const createPullRequestComment = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { content } = req.body;
+    
+    if (!content) {
+        throw new ApiError(400, 'Comment content is required');
+    }
+    
+    const pr = await PullRequest.findById(id);
+    if (!pr) throw new ApiError(404, 'Pull request not found');
+
+    const comment = await PRComment.create({
+        content,
+        author: req.user._id,
+        pullRequest: pr._id
+    });
+    
+    await comment.populate('author', 'username name email profilePicture avatar_url');
+    
+    res.status(201).json({ success: true, comment });
+});
+
 module.exports = {
     createPullRequest,
     listPullRequests,
     getPullRequest,
     getPullRequestCommits,
     updatePullRequest,
-    mergePullRequest
+    mergePullRequest,
+    getPullRequestComments,
+    createPullRequestComment
 };
+

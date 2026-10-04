@@ -131,7 +131,14 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
   const handleCreatePR = async (e) => {
     e.preventDefault();
     try {
-      await apiClient.post(`/repos/${owner}/${repo}/pulls`, { ...newPr, sourceOwner: owner, sourceRepo: repo });
+      const payload = {
+        ...newPr,
+        sourceOwner: owner,
+        sourceRepo: repo,
+        assignees: newPr.assignees?.map(a => a._id || a) || [],
+        reviewers: newPr.reviewers?.map(r => r._id || r) || [],
+      };
+      await apiClient.post(`/repos/${owner}/${repo}/pulls`, payload);
       jsonToast.success('Pull request created!');
       setViewState('list');
       fetchPRs();
@@ -350,6 +357,8 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
             <PRCreateView
               newPr={newPr} setNewPr={setNewPr}
               branches={branches}
+              prMetadata={prMetadata}
+              user={user}
               onSubmit={handleCreatePR}
               onCancel={() => setViewState('list')}
             />
@@ -371,6 +380,7 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
               onMerge={handleMerge}
               onClose={handleClose}
               fetchPRs={fetchPRs}
+              prMetadata={prMetadata}
             />
           </motion.div>
         )}
