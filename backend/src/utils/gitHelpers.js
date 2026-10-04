@@ -64,7 +64,8 @@ async function getCommitGraph(repoId, headHash, baseHash) {
         const hashesToFetch = [...new Set([...headQueue, ...baseQueue])].filter(h => !commitMap.has(h));
         
         if (hashesToFetch.length > 0) {
-            const objs = await GitObject.find({ repositoryId: repoId, hash: { $in: hashesToFetch }, type: 'commit' });
+            const repoIds = Array.isArray(repoId) ? repoId : [repoId];
+            const objs = await GitObject.find({ repositoryId: { $in: repoIds }, hash: { $in: hashesToFetch }, type: 'commit' });
             for (const obj of objs) {
                 try {
                     commitMap.set(obj.hash, { parsed: typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data, createdAt: obj.createdAt });

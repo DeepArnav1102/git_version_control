@@ -5,7 +5,7 @@ const PullRequest = require('../models/PullRequest.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
 const { resolveRepo } = require('../utils/repoHelpers');
-const { findCommonAncestor, flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
+const { getCommitGraph, flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const crypto = require('crypto');
 
 const createPullRequest = asyncHandler(async (req, res) => {
@@ -163,10 +163,28 @@ const getPullRequest = asyncHandler(async (req, res) => {
 });
 
 const getPullRequestCommits = asyncHandler(async (req, res) => {
-    const { owner, repo, id } = req.params;
-    // Logic for traversing GitObject to find commits unique to PR will go here.
-    // For now, return a placeholder.
-    res.status(501).json({ success: false, message: 'Not implemented' });
+    const { id } = req.params;
+    const pr = await PullRequest.findById(id).populate('targetRepo').populate('sourceRepo');
+    if (!pr) throw new ApiError(404, 'Pull Request not found');
+
+    if (!pr.targetRepo || !pr.sourceRepo) {
+        return res.status(200).json({ success: true, commits: [] });
+    }
+
+    const targetBranchDoc = pr.targetRepo.branches.find(b => b.name === pr.targetBranch);
+    const sourceBranchDoc = pr.sourceRepo.branches.find(b => b.name === pr.sourceBranch);
+    
+    if (!targetBranchDoc || !sourceBranchDoc) {
+        return res.status(200).json({ success: true, commits: [] });
+    }
+
+    const { commits } = await getCommitGraph(
+        [pr.targetRepo._id, pr.sourceRepo._id],
+        sourceBranchDoc.commitHash,
+        targetBranchDoc.commitHash
+    );
+
+    res.status(200).json({ success: true, commits });
 });
 
 const updatePullRequest = asyncHandler(async (req, res) => {
@@ -240,7 +258,7 @@ const mergePullRequest = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'Already up to date');
     }
 
-    const baseHash = await findCommonAncestor(pr.targetRepo._id, targetHash, sourceHash);
+    const { lcaHash: baseHash } = await getCommitGraph([pr.targetRepo._id, pr.sourceRepo._id], sourceHash, targetHash);
     if (!baseHash) throw new ApiError(400, 'Unrelated histories, cannot merge');
 
     const [baseCommit, oursCommit, theirsCommit] = await Promise.all([

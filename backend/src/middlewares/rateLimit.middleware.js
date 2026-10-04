@@ -37,8 +37,22 @@ const searchLimiter = rateLimit({
     }
 });
 
+// Rate limiter for the token refresh endpoint
+// 20 per 5 minutes per IP — generous for normal use (legitimate users hit it
+// once on page load), tight enough to block abuse loops.
+const refreshLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, next) => {
+        next(new ApiError(429, 'Too many token refresh attempts. Please try again later.'));
+    }
+});
+
 module.exports = {
     checkUsernameLimiter,
     otpLimiter,
-    searchLimiter
+    searchLimiter,
+    refreshLimiter
 };

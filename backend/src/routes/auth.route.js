@@ -21,7 +21,7 @@ const {
     logout,
 } = require('../controllers/auth.controller');
 const { protect } = require('../middlewares/auth.middleware');
-const { otpLimiter } = require('../middlewares/rateLimit.middleware');
+const { otpLimiter, refreshLimiter } = require('../middlewares/rateLimit.middleware');
 
 const router = express.Router();
 
@@ -129,7 +129,7 @@ router.post('/google/callback', googleCallback);
  *     summary: Refresh the access token using the refresh token cookie
  *     tags: [Auth]
  */
-router.post('/refresh', refresh);
+router.post('/refresh', refreshLimiter, refresh);
 
 /**
  * @swagger
