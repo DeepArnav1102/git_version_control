@@ -75,7 +75,12 @@ const listPullRequests = asyncHandler(async (req, res) => {
     
     if (!targetRepoDoc) throw new ApiError(404, 'Repository not found');
 
-    const query = { targetRepo: targetRepoDoc._id };
+    const query = { 
+        $or: [
+            { targetRepo: targetRepoDoc._id },
+            { sourceRepo: targetRepoDoc._id }
+        ]
+    };
     if (state) query.state = state;
 
     const resolveUser = async (val) => {
@@ -114,11 +119,11 @@ const listPullRequests = asyncHandler(async (req, res) => {
         .populate('author', 'username profilePicture')
         .populate('assignees', 'username profilePicture')
         .populate('reviewers', 'username profilePicture')
-        .populate('sourceRepo', 'name owner')
-        .populate('targetRepo', 'name owner');
+        .populate({ path: 'sourceRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } })
+        .populate({ path: 'targetRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } });
         
     const labelsAggregation = await PullRequest.aggregate([
-        { $match: { targetRepo: targetRepoDoc._id } },
+        { $match: { $or: [{ targetRepo: targetRepoDoc._id }, { sourceRepo: targetRepoDoc._id }] } },
         { $unwind: "$labels" },
         {
             $group: {
@@ -172,8 +177,8 @@ const getPullRequest = asyncHandler(async (req, res) => {
         .populate('author', 'username profilePicture')
         .populate('assignees', 'username profilePicture')
         .populate('reviewers', 'username profilePicture')
-        .populate('sourceRepo', 'name owner')
-        .populate('targetRepo', 'name owner');
+        .populate({ path: 'sourceRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } })
+        .populate({ path: 'targetRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } });
 
     if (!pr) throw new ApiError(404, 'Pull Request not found');
     res.status(200).json({ success: true, pr });

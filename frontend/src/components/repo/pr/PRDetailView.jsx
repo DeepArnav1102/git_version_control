@@ -25,6 +25,8 @@ export default function PRDetailView({
   const [loadingCompare, setLoadingCompare] = useState(true);
   const [loadingComments, setLoadingComments] = useState(true);
   
+  const canMerge = user && selectedPr.targetRepo?.owner?.username === user.username;
+  
   const getProfilePicture = (pfp) => pfp || 'https://res.cloudinary.com/do0st5xde/image/upload/v1787493034/defaultpfp.jpg';
 
   useEffect(() => {
@@ -34,7 +36,15 @@ export default function PRDetailView({
   const fetchCompareData = async () => {
     setLoadingCompare(true);
     try {
-      const res = await apiClient.get(`/repos/${owner}/${repo}/compare/${selectedPr.targetBranch}...${selectedPr.sourceBranch}`);
+      const sourceOwnerName = selectedPr.sourceRepo?.owner?.username || owner;
+      const targetOwnerName = selectedPr.targetRepo?.owner?.username || owner;
+      const targetRepoName = selectedPr.targetRepo?.name || repo;
+      
+      const sourceRef = sourceOwnerName !== targetOwnerName 
+        ? `${sourceOwnerName}:${selectedPr.sourceBranch}` 
+        : selectedPr.sourceBranch;
+        
+      const res = await apiClient.get(`/repos/${targetOwnerName}/${targetRepoName}/compare/${selectedPr.targetBranch}...${sourceRef}`);
       setCompareData(res.data.data);
     } catch (err) {
       console.error(err);
@@ -161,7 +171,7 @@ export default function PRDetailView({
              Checks <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px]">0</span>
            </button>
            <button className={`py-2 text-sm font-semibold border-b-2 flex items-center gap-2 ${activeTab === 'files' ? 'border-[#fd8c73] text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`} onClick={() => setActiveTab('files')}>
-             Files changed <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px]">{compareData ? compareData.files.length : 0}</span>
+             Files changed <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px]">{compareData?.files ? compareData.files.length : 0}</span>
            </button>
         </div>
       </div>
@@ -171,7 +181,7 @@ export default function PRDetailView({
         <div className="flex-1">
           {/* Timeline */}
           {activeTab === 'conversation' && (
-          <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+          <div className="space-y-6 relative">
              
              {/* Initial Description */}
              <div className="flex gap-4 relative z-10 mb-8">
@@ -245,55 +255,57 @@ export default function PRDetailView({
              )}
 
              {/* Merge Box */}
-             <div className="relative z-10 mt-8 mb-8">
-               <div className="flex items-start gap-4">
-                 <div className="mt-4">
-                   <div className="w-10 h-10 rounded-full bg-[#2da44e] flex items-center justify-center shadow-sm">
-                     <CheckCircle size={20} className="text-white" />
+             {(canMerge || selectedPr.state === 'merged') && (
+               <div className="relative z-10 mt-8 mb-8">
+                 <div className="flex items-start gap-4">
+                   <div className="mt-4">
+                     <div className="w-10 h-10 rounded-full bg-[#2da44e] flex items-center justify-center shadow-sm">
+                       <CheckCircle size={20} className="text-white" />
+                     </div>
+                   </div>
+                   <div className="flex-1 border border-[#d0d7de] rounded-md overflow-hidden bg-white shadow-sm">
+                     {selectedPr.state === 'open' && canMerge && !mergeConflict && (
+                       <>
+                         <div className="p-4 border-b border-[#d0d7de]">
+                           <h3 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">This branch has no conflicts with the base branch</h3>
+                           <p className="text-sm text-gray-600">Merging can be performed automatically.</p>
+                         </div>
+                         <div className="p-4 bg-[#f6f8fa] flex gap-2">
+                           <button onClick={() => onMerge(selectedPr._id)} disabled={merging} className="bg-[#2da44e] hover:bg-[#2c974b] text-white px-4 py-1.5 rounded-md text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 border border-[rgba(27,31,36,0.15)]">
+                             {merging ? 'Merging...' : 'Merge pull request'}
+                           </button>
+                           <div className="flex items-center text-sm text-gray-500 pl-2">
+                             You can also merge this with the command line.
+                           </div>
+                         </div>
+                       </>
+                     )}
+                     {selectedPr.state === 'open' && canMerge && mergeConflict && (
+                       <>
+                         <div className="p-4 border-b border-red-200 bg-red-50">
+                           <h3 className="text-base font-bold text-red-800 mb-1 flex items-center gap-2"><AlertTriangle size={18}/> This branch has conflicts</h3>
+                           <p className="text-sm text-red-700">The native Rust merge engine detected a conflict. Please resolve the following files locally:</p>
+                         </div>
+                         <div className="p-4 bg-white">
+                           <ul className="list-disc list-inside text-sm font-mono text-gray-700 bg-gray-50 border border-gray-200 rounded p-4 mb-4">
+                             {mergeConflict.files.map((file, idx) => <li key={idx}>{file}</li>)}
+                           </ul>
+                           <button disabled className="bg-gray-300 text-white px-4 py-2 rounded-md text-sm font-semibold cursor-not-allowed">
+                             Merge pull request
+                           </button>
+                         </div>
+                       </>
+                     )}
+                     {selectedPr.state === 'merged' && (
+                       <div className="p-4 bg-purple-50">
+                           <h3 className="text-base font-bold text-purple-900 mb-1 flex items-center gap-2"><GitPullRequest size={18}/> Pull request successfully merged</h3>
+                           <p className="text-sm text-purple-700">The commits were merged into {selectedPr.targetBranch}.</p>
+                       </div>
+                     )}
                    </div>
                  </div>
-                 <div className="flex-1 border border-[#d0d7de] rounded-md overflow-hidden bg-white shadow-sm">
-                   {selectedPr.state === 'open' && isOwner && !mergeConflict && (
-                     <>
-                       <div className="p-4 border-b border-[#d0d7de]">
-                         <h3 className="text-base font-bold text-gray-900 mb-1 flex items-center gap-2">This branch has no conflicts with the base branch</h3>
-                         <p className="text-sm text-gray-600">Merging can be performed automatically.</p>
-                       </div>
-                       <div className="p-4 bg-[#f6f8fa] flex gap-2">
-                         <button onClick={() => onMerge(selectedPr._id)} disabled={merging} className="bg-[#2da44e] hover:bg-[#2c974b] text-white px-4 py-1.5 rounded-md text-sm font-semibold shadow-sm transition-colors disabled:opacity-50 border border-[rgba(27,31,36,0.15)]">
-                           {merging ? 'Merging...' : 'Merge pull request'}
-                         </button>
-                         <div className="flex items-center text-sm text-gray-500 pl-2">
-                           You can also merge this with the command line.
-                         </div>
-                       </div>
-                     </>
-                   )}
-                   {selectedPr.state === 'open' && isOwner && mergeConflict && (
-                     <>
-                       <div className="p-4 border-b border-red-200 bg-red-50">
-                         <h3 className="text-base font-bold text-red-800 mb-1 flex items-center gap-2"><AlertTriangle size={18}/> This branch has conflicts</h3>
-                         <p className="text-sm text-red-700">The native Rust merge engine detected a conflict. Please resolve the following files locally:</p>
-                       </div>
-                       <div className="p-4 bg-white">
-                         <ul className="list-disc list-inside text-sm font-mono text-gray-700 bg-gray-50 border border-gray-200 rounded p-4 mb-4">
-                           {mergeConflict.files.map((file, idx) => <li key={idx}>{file}</li>)}
-                         </ul>
-                         <button disabled className="bg-gray-300 text-white px-4 py-2 rounded-md text-sm font-semibold cursor-not-allowed">
-                           Merge pull request
-                         </button>
-                       </div>
-                     </>
-                   )}
-                   {selectedPr.state === 'merged' && (
-                     <div className="p-4 bg-purple-50">
-                         <h3 className="text-base font-bold text-purple-900 mb-1 flex items-center gap-2"><GitPullRequest size={18}/> Pull request successfully merged</h3>
-                         <p className="text-sm text-purple-700">The commits were merged into {selectedPr.targetBranch}.</p>
-                     </div>
-                   )}
-                 </div>
                </div>
-             </div>
+             )}
 
              {/* Comment Box */}
              <div className="flex gap-4 relative z-10">

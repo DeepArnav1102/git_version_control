@@ -80,7 +80,7 @@ export default function PRCreateView({ newPr, setNewPr, branches, prMetadata = {
   }, [newPr.targetBranch, newPr.sourceBranch]);
 
   const fetchCompareData = async () => {
-    if (newPr.targetBranch === newPr.sourceBranch) {
+    if (newPr.targetBranch === newPr.sourceBranch && newPr.targetOwner === newPr.sourceOwner) {
       setCompareData({ identical: true });
       return;
     }
@@ -88,8 +88,9 @@ export default function PRCreateView({ newPr, setNewPr, branches, prMetadata = {
     setLoading(true);
     setError(null);
     try {
+      const sourceRef = newPr.sourceOwner !== newPr.targetOwner ? `${newPr.sourceOwner}:${newPr.sourceBranch}` : newPr.sourceBranch;
       const res = await axios.get(
-        `http://localhost:3000/api/v1/repos/${owner}/${repo}/compare/${newPr.targetBranch}...${newPr.sourceBranch}`,
+        `http://localhost:3000/api/v1/repos/${newPr.targetOwner || owner}/${newPr.targetRepo || repo}/compare/${newPr.targetBranch}...${sourceRef}`,
         { withCredentials: true }
       );
       setCompareData(res.data.data);
@@ -210,7 +211,7 @@ export default function PRCreateView({ newPr, setNewPr, branches, prMetadata = {
       <div className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm mb-4">
         <div className="bg-gray-50 p-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
           <BranchSelect
-            label="base"
+            label={`base (${newPr.targetOwner || owner})`}
             value={newPr.targetBranch}
             onChange={(val) => setNewPr({ ...newPr, targetBranch: val })}
             options={branches || []}
@@ -218,7 +219,7 @@ export default function PRCreateView({ newPr, setNewPr, branches, prMetadata = {
           />
           <div className="text-gray-400"><ArrowLeft size={14} /></div>
           <BranchSelect
-            label="compare"
+            label={`compare (${newPr.sourceOwner || owner})`}
             value={newPr.sourceBranch}
             onChange={(val) => setNewPr({ ...newPr, sourceBranch: val })}
             options={branches || []}
