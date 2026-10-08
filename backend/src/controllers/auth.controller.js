@@ -13,7 +13,7 @@ const setRefreshTokenCookie = (res, token) => {
     res.cookie('refreshToken', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Strict',
+        sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
         maxAge: 6 * 30 * 24 * 60 * 60 * 1000, // 6 months
     });
 };
@@ -54,7 +54,7 @@ const setAccessTokenCookie = (res, token) => {
     res.cookie('accessToken', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'Strict',
+        sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
         maxAge,
     });
 };

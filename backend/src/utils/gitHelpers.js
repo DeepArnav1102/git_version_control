@@ -64,7 +64,8 @@ async function getCommitGraph(repoId, headHash, baseHash) {
         const hashesToFetch = [...new Set([...headQueue, ...baseQueue])].filter(h => !commitMap.has(h));
         
         if (hashesToFetch.length > 0) {
-            const objs = await GitObject.find({ repositoryId: repoId, hash: { $in: hashesToFetch }, type: 'commit' });
+            const repoIds = Array.isArray(repoId) ? repoId : [repoId];
+            const objs = await GitObject.find({ repositoryId: { $in: repoIds }, hash: { $in: hashesToFetch }, type: 'commit' });
             for (const obj of objs) {
                 try {
                     commitMap.set(obj.hash, { parsed: typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data, createdAt: obj.createdAt });
@@ -150,9 +151,10 @@ async function flattenTree(repoId, rootTreeHash) {
         // 1. Gather all unique tree hashes for this depth level
         const hashesToFetch = [...new Set(queue.map(q => q.hash))];
         
+        const repoQuery = Array.isArray(repoId) ? { $in: repoId } : repoId;
         // 2. Fetch them all in a single batch query!
         const treeObjects = await GitObject.find({ 
-            repositoryId: repoId, 
+            repositoryId: repoQuery, 
             hash: { $in: hashesToFetch }, 
             type: 'tree' 
         });

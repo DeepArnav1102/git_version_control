@@ -562,31 +562,51 @@ const compareBranches = asyncHandler(async (req, res) => {
     const { owner, repo, compareString } = req.params;
     
     // Security Validation: prevent regex/DOS payloads in compare string
-    if (compareString.length > 512 || !/^[a-zA-Z0-9_\-\.\/]+\.\.\.[a-zA-Z0-9_\-\.\/]+$/.test(compareString)) {
+    if (compareString.length > 512 || !/^[a-zA-Z0-9_\-\.\/:]+\.\.\.[a-zA-Z0-9_\-\.\/:]+$/.test(compareString)) {
         throw new ApiError(400, 'Invalid compare string format or length. Use base...head');
     }
-    const [baseRef, headRef] = compareString.split('...');
+    let baseRef, headRef;
+    if (compareString.includes('...')) {
+        [baseRef, headRef] = compareString.split('...');
+    } else {
+        throw new ApiError(400, 'Invalid compare string format or length. Use base...head');
+    }
+
+    let sourceOwner = owner;
+    let sourceBranch = headRef;
+    if (headRef.includes(':')) {
+        [sourceOwner, sourceBranch] = headRef.split(':');
+    }
 
     const repoDoc = await resolveRepo(owner, repo, req.user);
-    if (!repoDoc) throw new ApiError(404, 'Repository not found');
+    if (!repoDoc) throw new ApiError(404, 'Base repository not found');
 
-    const resolveCommitHash = async (ref) => {
-        const branch = repoDoc.branches.find(b => b.name === ref);
+    let sourceRepoDoc = repoDoc;
+    if (sourceOwner !== owner) {
+        sourceRepoDoc = await resolveRepo(sourceOwner, repo, req.user);
+        if (!sourceRepoDoc) throw new ApiError(404, 'Source repository not found');
+    }
+
+    const repoIds = [repoDoc._id];
+    if (sourceOwner !== owner) repoIds.push(sourceRepoDoc._id);
+
+    const resolveCommitHash = async (repoDocument, ref) => {
+        const branch = repoDocument.branches.find(b => b.name === ref);
         if (branch) return branch.commitHash;
-        const commitObj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: ref, type: 'commit' });
+        const commitObj = await GitObject.findOne({ repositoryId: repoDocument._id, hash: ref, type: 'commit' });
         if (commitObj) return ref;
         return null;
     };
 
-    const baseHash = await resolveCommitHash(baseRef);
-    const headHash = await resolveCommitHash(headRef);
+    const baseHash = await resolveCommitHash(repoDoc, baseRef);
+    const headHash = await resolveCommitHash(sourceRepoDoc, sourceBranch);
 
     if (!baseHash || !headHash) {
         throw new ApiError(404, 'One or both branches/commits not found');
     }
 
     // Optimization: Traverse the graph efficiently in chunks without loading all commits
-    const { lcaHash, commits, commitMap } = await getCommitGraph(repoDoc._id, headHash, baseHash);
+    const { lcaHash, commits, commitMap } = await getCommitGraph(repoIds, headHash, baseHash);
 
     if (lcaHash === headHash) {
         return res.status(200).json({ success: true, data: { upToDate: true } });
@@ -609,8 +629,8 @@ const compareBranches = asyncHandler(async (req, res) => {
     const baseTreeHash = lcaCommit ? lcaCommit.parsed.tree : null;
     const headTreeHash = headCommit ? headCommit.parsed.tree : null;
 
-    const baseTreeFlat = await flattenTree(repoDoc._id, baseTreeHash);
-    const headTreeFlat = await flattenTree(repoDoc._id, headTreeHash);
+    const baseTreeFlat = await flattenTree(repoIds, baseTreeHash);
+    const headTreeFlat = await flattenTree(repoIds, headTreeHash);
 
     const allPaths = new Set([...Object.keys(baseTreeFlat), ...Object.keys(headTreeFlat)]);
     const changedFiles = [];
@@ -642,7 +662,7 @@ const compareBranches = asyncHandler(async (req, res) => {
         if (!isBinary && status !== 'deleted') {
             const getBlob = async (h) => {
                 if (!h) return '';
-                const obj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: h, type: 'blob' });
+                const obj = await GitObject.findOne({ repositoryId: { $in: repoIds }, hash: h, type: 'blob' });
                 return obj ? obj.data : '';
             };
             const oldStr = await getBlob(bHash);
@@ -653,7 +673,7 @@ const compareBranches = asyncHandler(async (req, res) => {
             additions = diffResult.additions;
             deletions = diffResult.deletions;
         } else if (!isBinary && status === 'deleted') {
-            const obj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: bHash, type: 'blob' });
+            const obj = await GitObject.findOne({ repositoryId: { $in: repoIds }, hash: bHash, type: 'blob' });
             const oldStr = obj ? obj.data : '';
             deletions = oldStr.split('\n').length;
         }
@@ -676,7 +696,7 @@ const compareBranches = asyncHandler(async (req, res) => {
     let conflictFiles = [];
     
     // nativeMerge expects baseTree (LCA), oursTree (base branch), theirsTree (head branch)
-    const oursCommitHash = await resolveCommitHash(baseRef);
+    const oursCommitHash = await resolveCommitHash(repoDoc, baseRef);
     const oursCommitEntry = commitMap.get(oursCommitHash);
     const oursTreeHash = oursCommitEntry ? oursCommitEntry.parsed.tree : null;
     const oursTreeFlat = await flattenTree(repoDoc._id, oursTreeHash);

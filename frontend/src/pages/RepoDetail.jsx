@@ -788,6 +788,7 @@ export default function RepoDetail() {
               currentBranch={currentBranch}
               branches={repoData?.branches || []}
               repoId={repoData?._id}
+              repoData={repoData}
             />
           </motion.div>
         )}

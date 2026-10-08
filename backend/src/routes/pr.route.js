@@ -6,7 +6,9 @@ const {
     getPullRequest,
     getPullRequestCommits,
     updatePullRequest,
-    mergePullRequest
+    mergePullRequest,
+    getPullRequestComments,
+    createPullRequestComment
 } = require('../controllers/pr.controller');
 
 // Important: mergeParams: true allows access to :owner and :repo from the parent router
@@ -21,5 +23,7 @@ router.get('/:id', getPullRequest);
 router.get('/:id/commits', getPullRequestCommits);
 router.patch('/:id', updatePullRequest);
 router.post('/:id/merge', mergePullRequest);
+router.get('/:id/comments', getPullRequestComments);
+router.post('/:id/comments', createPullRequestComment);
 
 module.exports = router;

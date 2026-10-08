@@ -11,7 +11,7 @@ import PRListItem from './pr/PRListItem';
 import PRCreateView from './pr/PRCreateView';
 import PRDetailView from './pr/PRDetailView';
 
-export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, branches, repoId }) {
+export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, branches, repoId, repoData }) {
   const { user } = useAuthStore();
 
   // Data
@@ -39,9 +39,34 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Create form
-  const [newPr, setNewPr] = useState({ title: '', description: '', sourceBranch: '', targetBranch: 'main' });
+  const [newPr, setNewPr] = useState({ 
+    title: '', 
+    description: '', 
+    sourceBranch: '', 
+    targetBranch: 'main',
+    sourceOwner: owner,
+    sourceRepo: repo,
+    targetOwner: owner,
+    targetRepo: repo
+  });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    if (repoData?.isFork && repoData.parentRepo) {
+      setNewPr(prev => ({
+        ...prev,
+        targetOwner: repoData.parentRepo.owner.username,
+        targetRepo: repoData.parentRepo.name
+      }));
+    } else {
+      setNewPr(prev => ({
+        ...prev,
+        targetOwner: owner,
+        targetRepo: repo
+      }));
+    }
+  }, [repoData, owner, repo]);
 
   useEffect(() => {
     if (branches && branches.length > 0) {
@@ -131,9 +156,19 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
   const handleCreatePR = async (e) => {
     e.preventDefault();
     try {
-      await apiClient.post(`/repos/${owner}/${repo}/pulls`, { ...newPr, sourceOwner: owner, sourceRepo: repo });
+      const payload = {
+        ...newPr,
+        sourceOwner: newPr.sourceOwner,
+        sourceRepo: newPr.sourceRepo,
+        assignees: newPr.assignees?.map(a => a._id || a) || [],
+        reviewers: newPr.reviewers?.map(r => r._id || r) || [],
+      };
+      await apiClient.post(`/repos/${newPr.targetOwner}/${newPr.targetRepo}/pulls`, payload);
       jsonToast.success('Pull request created!');
       setViewState('list');
+      // If we posted to another repo (the parent), fetchPRs on the current repo won't show it immediately,
+      // but if the user goes to the parent repo, they'll see it.
+      // We can still try to fetchPRs (maybe we show outgoing PRs?)
       fetchPRs();
     } catch (err) {
       jsonToast.error(err?.response?.data?.message || 'Failed to create PR');
@@ -350,6 +385,8 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
             <PRCreateView
               newPr={newPr} setNewPr={setNewPr}
               branches={branches}
+              prMetadata={prMetadata}
+              user={user}
               onSubmit={handleCreatePR}
               onCancel={() => setViewState('list')}
             />
@@ -371,6 +408,7 @@ export default function PullRequestsTab({ owner, repo, isOwner, currentBranch, b
               onMerge={handleMerge}
               onClose={handleClose}
               fetchPRs={fetchPRs}
+              prMetadata={prMetadata}
             />
           </motion.div>
         )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Check, X, GitCommit, FileCode, Users, AlertTriangle, File } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Check, X, GitCommit, FileCode, Users, AlertTriangle, File } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import hljs from 'highlight.js';
@@ -64,7 +64,9 @@ const BranchSelect = ({ value, onChange, options, placeholder, label }) => {
   );
 };
 
-export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCancel }) {
+import MultiSelect from './MultiSelect';
+
+export default function PRCreateView({ newPr, setNewPr, branches, prMetadata = { users: [], labels: [] }, user, onSubmit, onCancel }) {
   const { owner, repo } = useParams();
   const [compareData, setCompareData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -78,7 +80,7 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
   }, [newPr.targetBranch, newPr.sourceBranch]);
 
   const fetchCompareData = async () => {
-    if (newPr.targetBranch === newPr.sourceBranch) {
+    if (newPr.targetBranch === newPr.sourceBranch && newPr.targetOwner === newPr.sourceOwner) {
       setCompareData({ identical: true });
       return;
     }
@@ -86,8 +88,9 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
     setLoading(true);
     setError(null);
     try {
+      const sourceRef = newPr.sourceOwner !== newPr.targetOwner ? `${newPr.sourceOwner}:${newPr.sourceBranch}` : newPr.sourceBranch;
       const res = await axios.get(
-        `http://localhost:3000/api/v1/repos/${owner}/${repo}/compare/${newPr.targetBranch}...${newPr.sourceBranch}`,
+        `http://localhost:3000/api/v1/repos/${newPr.targetOwner || owner}/${newPr.targetRepo || repo}/compare/${newPr.targetBranch}...${sourceRef}`,
         { withCredentials: true }
       );
       setCompareData(res.data.data);
@@ -208,15 +211,15 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
       <div className="bg-white border border-gray-200 rounded-lg overflow-visible shadow-sm mb-4">
         <div className="bg-gray-50 p-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
           <BranchSelect
-            label="base"
+            label={`base (${newPr.targetOwner || owner})`}
             value={newPr.targetBranch}
             onChange={(val) => setNewPr({ ...newPr, targetBranch: val })}
             options={branches || []}
             placeholder="Select branch..."
           />
-          <div className="text-gray-400"><ArrowRight size={14} /></div>
+          <div className="text-gray-400"><ArrowLeft size={14} /></div>
           <BranchSelect
-            label="compare"
+            label={`compare (${newPr.sourceOwner || owner})`}
             value={newPr.sourceBranch}
             onChange={(val) => setNewPr({ ...newPr, sourceBranch: val })}
             options={branches || []}
@@ -270,34 +273,92 @@ export default function PRCreateView({ newPr, setNewPr, branches, onSubmit, onCa
                  Create pull request
                </button>
             ) : (
-               <form onSubmit={onSubmit} className="space-y-3 mb-2 p-4 border border-gray-200 rounded-lg bg-gray-50/50">
-                 <input
-                   type="text"
-                   placeholder="Pull request title"
-                   required
-                   maxLength={255}
-                   value={newPr.title}
-                   onChange={e => setNewPr({ ...newPr, title: e.target.value })}
-                   className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-[#fd8c73] focus:border-[#fd8c73] transition-all font-semibold bg-white"
-                 />
-                 <textarea
-                   placeholder="Add a description..."
-                   rows={4}
-                   value={newPr.description}
-                   onChange={e => setNewPr({ ...newPr, description: e.target.value })}
-                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-[#fd8c73] focus:border-[#fd8c73] transition-all resize-y bg-white text-gray-700"
-                 />
-                 <div className="flex justify-end gap-2 pt-1">
-                    <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors">
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={!newPr.title || !newPr.sourceBranch}
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-md text-xs font-semibold transition-colors shadow-sm disabled:opacity-50"
-                    >
-                      Create pull request
-                    </button>
+               <form onSubmit={onSubmit} className="flex flex-col md:flex-row gap-6 mb-2">
+                 <div className="flex-1 flex gap-4">
+                   <div className="hidden sm:block">
+                     <img src={getProfilePicture(user?.profilePicture || user?.avatar_url)} alt="pfp" className="w-10 h-10 rounded-full border border-gray-200 shadow-sm" />
+                   </div>
+                   <div className="flex-1 space-y-4">
+                     <input
+                       type="text"
+                       placeholder="Add a title"
+                       required
+                       maxLength={255}
+                       value={newPr.title}
+                       onChange={e => setNewPr({ ...newPr, title: e.target.value })}
+                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#0969da]/30 focus:border-[#0969da] transition-all font-semibold bg-gray-50/50"
+                     />
+                     <div className="border border-gray-300 rounded-md bg-white overflow-hidden focus-within:ring-2 focus-within:ring-[#0969da]/30 focus-within:border-[#0969da] transition-all flex flex-col">
+                       <div className="bg-gray-50/80 px-4 py-2 border-b border-gray-200 text-xs font-semibold text-gray-600 flex gap-4">
+                         <span className="text-gray-900 border-b-2 border-gray-400 pb-2 -mb-2">Write</span>
+                         <span className="text-gray-400 font-normal cursor-not-allowed">Preview</span>
+                       </div>
+                       <textarea
+                         placeholder="Add a description..."
+                         rows={8}
+                         value={newPr.description}
+                         onChange={e => setNewPr({ ...newPr, description: e.target.value })}
+                         className="w-full px-3 py-3 text-sm focus:outline-none resize-y bg-transparent text-gray-700 min-h-[150px]"
+                       />
+                       <div className="bg-gray-50/80 border-t border-gray-200 px-3 py-1.5 flex justify-between items-center text-xs text-gray-500">
+                         <span className="flex items-center gap-1"><FileCode size={14}/> Markdown is supported</span>
+                         <span>Attach files by dragging & dropping</span>
+                       </div>
+                     </div>
+                     <div className="flex justify-end gap-2 pt-2">
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors border border-transparent hover:bg-gray-100 rounded-md">
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!newPr.title || !newPr.sourceBranch}
+                          className="bg-[#2da44e] hover:bg-[#2c974b] text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                        >
+                          Create pull request
+                        </button>
+                     </div>
+                   </div>
+                 </div>
+
+                 <div className="w-full md:w-64 flex-shrink-0 flex flex-col divide-y divide-gray-100 pt-1 border border-transparent">
+                    <MultiSelect
+                      label="Reviewers"
+                      placeholder="No reviews"
+                      options={prMetadata?.users?.filter(u => u._id !== user?._id) || []}
+                      selected={newPr.reviewers || []}
+                      onChange={val => setNewPr({ ...newPr, reviewers: val })}
+                      renderOption={(u, isSel) => (
+                        <div className="flex items-center gap-2">
+                          <img src={getProfilePicture(u.profilePicture || u.avatar_url)} alt="pfp" className="w-4 h-4 rounded-full"/>
+                          <span className={isSel ? 'font-medium' : ''}>{u.username || u.name}</span>
+                        </div>
+                      )}
+                    />
+                    <MultiSelect
+                      label="Assignees"
+                      placeholder={user ? <span onClick={(e) => { e.preventDefault(); setNewPr({...newPr, assignees: [user]}) }} className="cursor-pointer hover:text-[#0969da] hover:underline">No one—assign yourself</span> : "No one"}
+                      options={prMetadata?.users || []}
+                      selected={newPr.assignees || []}
+                      onChange={val => setNewPr({ ...newPr, assignees: val })}
+                      renderOption={(u, isSel) => (
+                        <div className="flex items-center gap-2">
+                          <img src={getProfilePicture(u.profilePicture || u.avatar_url)} alt="pfp" className="w-4 h-4 rounded-full"/>
+                          <span className={isSel ? 'font-medium' : ''}>{u.username || u.name}</span>
+                        </div>
+                      )}
+                    />
+                    <MultiSelect
+                      label="Labels"
+                      placeholder="None yet"
+                      options={prMetadata?.labels || []}
+                      selected={newPr.labels || []}
+                      onChange={val => setNewPr({ ...newPr, labels: val })}
+                      renderOption={(l, isSel) => (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium border" style={{ backgroundColor: (l.color || '#ccc') + '20', borderColor: (l.color || '#ccc') + '40', color: l.color || '#666' }}>
+                          {l.name}
+                        </span>
+                      )}
+                    />
                  </div>
                </form>
             )}
