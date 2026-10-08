@@ -1,0 +1,1 @@
+/mnt/projects/git-rust/git_version_control/backend/native-merge/target/release/libnative_merge.so: /mnt/projects/git-rust/git_version_control/backend/native-merge/build.rs /mnt/projects/git-rust/git_version_control/backend/native-merge/src/lib.rs
