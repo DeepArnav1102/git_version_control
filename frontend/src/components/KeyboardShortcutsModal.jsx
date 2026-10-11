@@ -28,8 +28,12 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
     const handleEsc = (e) => {
       if (e.key === 'Escape' && isOpen) onClose();
     };
+    window.addEventListener('keydown', handleEsc);
     window.addEventListener('escape-pressed', handleEsc);
-    return () => window.removeEventListener('escape-pressed', handleEsc);
+    return () => {
+      window.removeEventListener('keydown', handleEsc);
+      window.removeEventListener('escape-pressed', handleEsc);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -99,9 +103,14 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
       title: "IDE / Codespace",
       shortcuts: [
         { action: "Save current file", keys: ["Ctrl", "S"] },
+        { action: "Run current file", keys: ["Ctrl", "Enter"] },
+        { action: "Run current file (Alt)", keys: ["F5"] },
         { action: "Toggle integrated terminal", keys: ["Ctrl", "`"] },
+        { action: "Toggle terminal (Alt)", keys: ["Ctrl", "\\"] },
+        { action: "Toggle terminal (VS Code)", keys: ["Ctrl", "J"] },
         { action: "Toggle file tree", keys: ["Ctrl", "B"] },
-        { action: "Close active panel", keys: ["Escape"] }
+        { action: "Push changes to git", keys: ["Ctrl", "Shift", "P"] },
+        { action: "Close active panel / modal", keys: ["Escape"] }
       ]
     },
     {

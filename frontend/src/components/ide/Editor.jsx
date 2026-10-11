@@ -12,14 +12,69 @@ import MonacoEditor from '@monaco-editor/react';
  * @param {Function} props.onRun - Called when Ctrl+Enter is pressed.
  * @param {React.MutableRefObject} props.editorRef - Ref to expose the Monaco editor instance.
  */
-export default function Editor({ code, onChange, onRun, editorRef }) {
+export default function Editor({ 
+  code, 
+  onChange, 
+  onRun, 
+  onSave, 
+  onToggleTerminal, 
+  onToggleSidebar, 
+  onPush, 
+  onOpenShortcuts, 
+  editorRef 
+}) {
+  const callbacksRef = useRef({});
+  callbacksRef.current = {
+    onRun,
+    onSave,
+    onToggleTerminal,
+    onToggleSidebar,
+    onPush,
+    onOpenShortcuts,
+  };
+
   const handleEditorDidMount = (editor, monaco) => {
     // Store the editor instance so the parent can call editor.getValue() directly
     if (editorRef) editorRef.current = editor;
 
-    // Bind Ctrl+Enter / Cmd+Enter to the Run action
+    // Ctrl + S / Cmd + S -> Save current file
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      callbacksRef.current.onSave?.();
+    });
+
+    // Ctrl + Enter / Cmd + Enter -> Run Python code
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      if (onRun) onRun();
+      callbacksRef.current.onRun?.();
+    });
+
+    // F5 -> Run Python code
+    editor.addCommand(monaco.KeyCode.F5, () => {
+      callbacksRef.current.onRun?.();
+    });
+
+    // Ctrl + ` / Cmd + ` -> Toggle integrated terminal
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backquote, () => {
+      callbacksRef.current.onToggleTerminal?.();
+    });
+
+    // Ctrl + \ / Cmd + \ -> Toggle integrated terminal
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Backslash, () => {
+      callbacksRef.current.onToggleTerminal?.();
+    });
+
+    // Ctrl + J / Cmd + J -> Toggle integrated terminal (VS Code style)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyJ, () => {
+      callbacksRef.current.onToggleTerminal?.();
+    });
+
+    // Ctrl + B / Cmd + B -> Toggle sidebar file tree
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB, () => {
+      callbacksRef.current.onToggleSidebar?.();
+    });
+
+    // Ctrl + Shift + P / Cmd + Shift + P -> Push Changes modal
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => {
+      callbacksRef.current.onPush?.();
     });
   };
 

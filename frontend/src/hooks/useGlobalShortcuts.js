@@ -24,6 +24,9 @@ export default function useGlobalShortcuts() {
     };
 
     const handleKeyDown = (e) => {
+      // Never fire global single-key shortcuts when the user is in the IDE / Codespace
+      if (window.location.pathname.startsWith('/ide')) return;
+
       // Never fire shortcuts when the user is typing
       if (isInputFocused()) return;
 
@@ -51,7 +54,7 @@ export default function useGlobalShortcuts() {
             navigate('/profile?tab=repositories');
             break;
           case 'i':
-            navigate('/ide');
+            window.open('/ide', '_blank');
             break;
           case 'b':
             navigate('/notifications');

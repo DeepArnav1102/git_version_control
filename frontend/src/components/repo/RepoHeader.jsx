@@ -266,6 +266,16 @@ export default function RepoHeader({
               <span>{commits.length} {commits.length === 1 ? 'commit' : 'commits'}</span>
             </button>
 
+            {/* Codespace Button */}
+            <button
+              onClick={handleOpenRepoInCodespace}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
+              title="Open repository in Codespaces (Ctrl+.)"
+            >
+              <Code2 size={13} />
+              <span>Codespace</span>
+            </button>
+
             {/* Clone / Remote Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
@@ -324,18 +334,15 @@ export default function RepoHeader({
                     </div>
                   </div>
 
-                  {isRepo100PercentPython && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <button
-                        onClick={handleOpenRepoInCodespace}
-                        disabled={loadingCodespace}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white border border-transparent rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <Code2 size={14} />
-                        {loadingCodespace ? 'Preparing Codespace...' : 'Open in Codespace'}
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <button
+                      onClick={handleOpenRepoInCodespace}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white border border-transparent rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <Code2 size={14} />
+                      Open in Codespace
+                    </button>
+                  </div>
 
                   <div className="mt-4 pt-3 border-t border-gray-200">
                     <button

@@ -3,6 +3,7 @@ const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const { resolveRepo } = require('../utils/repoHelpers');
+const { canUserPushToRepo } = require('../utils/permissionHelpers');
 
 
 // ============================================================
@@ -86,13 +87,10 @@ const storeObject = asyncHandler(async (req, res) => {
         );
     }
 
-    if (
-        repoDoc.owner.toString() !==
-        req.user._id.toString()
-    ) {
+    if (!canUserPushToRepo(repoDoc, req.user)) {
         throw new ApiError(
             403,
-            'You do not have permission to push to this repository'
+            'You do not have permission to push to this repository. You must be the owner or an approved contributor.'
         );
     }
 
@@ -177,13 +175,10 @@ const updateRef = asyncHandler(async (req, res) => {
         );
     }
 
-    if (
-        repoDoc.owner.toString() !==
-        req.user._id.toString()
-    ) {
+    if (!canUserPushToRepo(repoDoc, req.user)) {
         throw new ApiError(
             403,
-            'You do not have permission to push to this repository'
+            'You do not have permission to push to this repository. You must be the owner or an approved contributor.'
         );
     }
 
@@ -383,13 +378,10 @@ const deleteRemoteRef = asyncHandler(async (req, res) => {
         );
     }
 
-    if (
-        repoDoc.owner.toString() !==
-        req.user._id.toString()
-    ) {
+    if (!canUserPushToRepo(repoDoc, req.user)) {
         throw new ApiError(
             403,
-            'You do not have permission to delete branches'
+            'You do not have permission to delete branches in this repository'
         );
     }
 

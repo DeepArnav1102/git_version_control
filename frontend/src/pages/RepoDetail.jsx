@@ -304,16 +304,9 @@ export default function RepoDetail() {
     }
   };
 
-  const handleOpenRepoInCodespace = async () => {
-    try {
-      setLoadingCodespace(true);
-      await apiClient.post('/ide/load-codespace', { type: 'repo', owner, repo });
-      jsonToast.success('Codespace ready!');
-      navigate('/ide');
-    } catch (err) {
-      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
-      setLoadingCodespace(false);
-    }
+  const handleOpenRepoInCodespace = () => {
+    jsonToast.success('Opening Codespace in a new tab...');
+    window.open(`/ide?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, '_blank');
   };
 
   const isRepo100PercentPython = React.useMemo(() => {

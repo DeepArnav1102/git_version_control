@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const Docker = require('dockerode');
+const jwt = require('jsonwebtoken');
 
 const isWindows = process.platform === 'win32';
 const socketPath = isWindows ? '//./pipe/docker_engine' : '/var/run/docker.sock';
@@ -15,21 +16,99 @@ const docker = new Docker({ socketPath });
  */
 function initTerminalServer(server) {
   const wss = new WebSocket.Server({ noServer: true, path: '/ws/terminal' });
+  const activeWorkspaces = new Map(); // workspaceId -> Set<WebSocket>
+  const pendingCleanupTimers = new Map(); // workspaceId -> Timeout
 
   wss.on('connection', async (ws, req) => {
     let container;
     let isClosed = false;
 
-    // Cleanup container if the WebSocket closes
+    // Determine workspace ID from query params, cookies, or fallback
+    let workspaceId = null;
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      workspaceId = parsedUrl.searchParams.get('workspaceId');
+    } catch (_) {}
+
+    if (!workspaceId && req.headers?.cookie) {
+      try {
+        const cookieEntries = req.headers.cookie.split(';').map(c => {
+          const [k, ...v] = c.trim().split('=');
+          return [k, v.join('=')];
+        });
+        const cookies = Object.fromEntries(cookieEntries);
+        if (cookies.accessToken) {
+          const decoded = jwt.decode(cookies.accessToken);
+          if (decoded?.userId) {
+            workspaceId = decoded.userId.toString();
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!workspaceId) {
+      workspaceId = 'default_workspace';
+    }
+
+    // Register active terminal session
+    if (!activeWorkspaces.has(workspaceId)) {
+      activeWorkspaces.set(workspaceId, new Set());
+    }
+    activeWorkspaces.get(workspaceId).add(ws);
+
+    // Cancel pending cleanup timer if this workspace reconnected (e.g. reload)
+    if (pendingCleanupTimers.has(workspaceId)) {
+      clearTimeout(pendingCleanupTimers.get(workspaceId));
+      pendingCleanupTimers.delete(workspaceId);
+      console.log(`[Codespace Watchdog] Reconnected to workspace ${workspaceId}, cancelled pending cleanup.`);
+    }
+
+    // Cloudflare 100-second idle timeout safeguard: ping every 30 seconds
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+      }
+    }, 30000);
+
+    // Cleanup container and ping interval if the WebSocket closes
     ws.on('close', async () => {
       isClosed = true;
+      clearInterval(pingInterval);
       try { if (container) await container.remove({ force: true }); } catch (_) { /* ignore kill errors */ }
+
+      // Unregister active terminal session
+      if (workspaceId && workspaceId !== 'default_workspace') {
+        const wsSet = activeWorkspaces.get(workspaceId);
+        if (wsSet) {
+          wsSet.delete(ws);
+          if (wsSet.size === 0) {
+            activeWorkspaces.delete(workspaceId);
+
+            // Tab closed: schedule auto-cleanup of workspace_data after 3.5 seconds
+            if (pendingCleanupTimers.has(workspaceId)) {
+              clearTimeout(pendingCleanupTimers.get(workspaceId));
+            }
+            const timer = setTimeout(async () => {
+              pendingCleanupTimers.delete(workspaceId);
+              console.log(`[Codespace Watchdog] Tab closed for workspace ${workspaceId}. Auto-cleaning workspace_data...`);
+              try {
+                const { cleanupCodespaceWorkspace } = require('../routes/ide.route');
+                if (typeof cleanupCodespaceWorkspace === 'function') {
+                  await cleanupCodespaceWorkspace(workspaceId);
+                }
+              } catch (cleanupErr) {
+                console.error('[Codespace Watchdog] Auto-cleanup error:', cleanupErr.message);
+              }
+            }, 3500);
+            pendingCleanupTimers.set(workspaceId, timer);
+          }
+        }
+      }
     });
 
     try {
       const { FileService } = require('./file.service');
-      // Using 'default_workspace' for now. For auth, parse ws params or cookies.
-      const workspaceId = 'default_workspace'; 
+
       const hostWorkspacePath = await FileService.ensureWorkspace(workspaceId);
       const bindPath = `${hostWorkspacePath}:/workspace`;
 

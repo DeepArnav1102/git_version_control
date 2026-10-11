@@ -67,6 +67,23 @@ class FileService {
     }
 
     /**
+     * Completely removes the user's workspace directory from disk when codespace is closed.
+     */
+    static async deleteWorkspace(userId) {
+        const userWorkspace = this.getSecurePath(userId);
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                await fs.rm(userWorkspace, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+                return { success: true };
+            } catch (err) {
+                if (attempt === 3) throw err;
+                await new Promise(res => setTimeout(res, 250));
+            }
+        }
+        return { success: true };
+    }
+
+    /**
      * Recursively reads a directory to build a file tree.
      *
      * @param {string} dirPath - The absolute path of the directory.
@@ -161,6 +178,33 @@ class FileService {
             await fs.unlink(securePath);
         }
         return { success: true };
+    }
+
+    /**
+     * Recursively retrieves all workspace files as { relativePath: utf8Content }
+     */
+    static async getAllFilesFlat(userId) {
+        const userWorkspace = await this.ensureWorkspace(userId);
+        const result = {};
+
+        async function walk(dir, relPath = '') {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.') || entry.name === '__pycache__' || entry.name === 'node_modules') {
+                    continue;
+                }
+                const fullPath = path.join(dir, entry.name);
+                const itemRel = relPath ? `${relPath}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) {
+                    await walk(fullPath, itemRel);
+                } else if (entry.isFile()) {
+                    result[itemRel] = await fs.readFile(fullPath, 'utf8');
+                }
+            }
+        }
+
+        await walk(userWorkspace);
+        return result;
     }
 }
 

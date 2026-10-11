@@ -24,7 +24,15 @@ const startApplication = async () => {
         const wss = initTerminalServer(server);
 
         server.on('upgrade', (request, socket, head) => {
-            if (request.url === '/ws/terminal') {
+            let pathname = '';
+            try {
+                const parsedUrl = new URL(request.url, 'http://localhost');
+                pathname = parsedUrl.pathname;
+            } catch (_) {
+                pathname = request.url;
+            }
+
+            if (pathname === '/ws/terminal') {
                 wss.handleUpgrade(request, socket, head, (ws) => {
                     wss.emit('connection', ws, request);
                 });

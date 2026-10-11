@@ -86,20 +86,10 @@ export default function CodeTab({
     return 'just now';
   };
 
-  const handleOpenFileInCodespace = async () => {
-    try {
-      setLoadingCodespace(true);
-      await apiClient.post('/ide/load-codespace', {
-        type: 'file',
-        hash: activeFile.hash,
-        filename: activeFile.name
-      });
-      jsonToast.success('Codespace ready!');
-      navigate('/ide');
-    } catch (err) {
-      jsonToast.error(err?.response?.data?.error || 'Failed to open Codespace');
-      setLoadingCodespace(false);
-    }
+  const handleOpenFileInCodespace = () => {
+    if (!activeFile) return;
+    jsonToast.success('Opening file in Codespace...');
+    window.open(`/ide?type=file&hash=${encodeURIComponent(activeFile.hash)}&filename=${encodeURIComponent(activeFile.name)}&owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, '_blank');
   };
 
   const isRepo100PercentPython = React.useMemo(() => {
@@ -109,8 +99,21 @@ export default function CodeTab({
 
   const isPythonFile = activeFile?.name?.endsWith('.py');
 
+  const handleOpenRepoInCodespace = () => {
+    jsonToast.success('Opening Codespace in a new tab...');
+    window.open(`/ide?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, '_blank');
+  };
+
   if (isEmpty) {
-    return <EmptyRepoView repoData={repoData} remoteUrl={remoteUrl} copyToClipboard={copyToClipboard} />;
+    return (
+      <EmptyRepoView 
+        repoData={repoData} 
+        remoteUrl={remoteUrl} 
+        copyToClipboard={copyToClipboard} 
+        onOpenInCodespace={handleOpenRepoInCodespace}
+        loadingCodespace={loadingCodespace}
+      />
+    );
   }
 
   return (

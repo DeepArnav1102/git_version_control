@@ -113,7 +113,11 @@ const repositorySchema = new mongoose.Schema(
         isArchived: {
             type: Boolean,
             default: false
-        }
+        },
+        environmentVariables: [{
+            key: { type: String, required: true },
+            value: { type: String, default: '' },
+        }]
     },
     { timestamps: true }
 );

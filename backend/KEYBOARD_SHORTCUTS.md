@@ -81,8 +81,11 @@ A complete reference of all planned keyboard shortcuts for the app.
 | Shortcut | Action |
 |---|---|
 | `Ctrl + S` | Save current file |
-| `Ctrl + \` | Toggle integrated terminal |
+| `Ctrl + Enter` / `F5` | Run Python file |
+| `Ctrl + \` / `Ctrl + \`` / `Ctrl + J` | Toggle integrated terminal |
 | `Ctrl + B` | Toggle file tree panel |
+| `Ctrl + Shift + P` | Commit and push changes to remote |
+| `?` / `F1` | Show keyboard shortcuts reference modal |
 | `Escape` | Close active panel / modal |
 
 ---

@@ -1,7 +1,13 @@
 import React from 'react';
 import { Monitor, UserPlus, Copy } from 'lucide-react';
 
-export default function EmptyRepoView({ repoData, remoteUrl, copyToClipboard }) {
+export default function EmptyRepoView({ 
+  repoData, 
+  remoteUrl, 
+  copyToClipboard, 
+  onOpenInCodespace, 
+  loadingCodespace 
+}) {
   return (
     <div className="mt-6 space-y-6">
       {/* Top Cards */}
@@ -13,8 +19,12 @@ export default function EmptyRepoView({ repoData, remoteUrl, copyToClipboard }) 
           <p className="text-xs text-gray-500 mb-4 h-8">
             Add a README file and start coding in a secure, configurable, and dedicated development environment.
           </p>
-          <button className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-md text-xs font-semibold text-gray-700 transition-colors cursor-pointer">
-            Create a codespace
+          <button 
+            onClick={onOpenInCodespace}
+            disabled={loadingCodespace}
+            className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-md text-xs font-semibold text-gray-700 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {loadingCodespace ? 'Preparing Codespace...' : 'Create a codespace'}
           </button>
         </div>
 

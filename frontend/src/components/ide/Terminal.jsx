@@ -32,6 +32,22 @@ const Terminal = forwardRef(({ wsUrl }, ref) => {
     fitAddon.fit();
     xtermInstance.current = term;
 
+    // Allow IDE global shortcuts to pass through rather than getting swallowed by xterm
+    term.attachCustomKeyEventHandler((event) => {
+      const isCtrlOrMeta = event.ctrlKey || event.metaKey;
+      if (isCtrlOrMeta) {
+        const k = event.key.toLowerCase();
+        // Allow IDE shortcuts: Ctrl+S, Ctrl+B, Ctrl+`, Ctrl+\, Ctrl+J, Ctrl+Enter, Ctrl+Shift+P
+        if (k === 's' || k === 'b' || k === '`' || k === '\\' || k === 'j' || k === 'enter' || (k === 'p' && event.shiftKey)) {
+          return false; // let event bubble to window listener
+        }
+      }
+      if (event.key === 'F5' || event.key === 'Escape') {
+        return false;
+      }
+      return true;
+    });
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}${wsUrl}`);
     socketRef.current = socket;
