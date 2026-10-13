@@ -5,6 +5,7 @@ import { z } from 'zod';
 import apiClient from '../../../lib/axios';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import useAuthStore from '../../../store/useAuthStore';
 
 // Reusing backend logic constraints
 const coreDetailsSchema = z.object({
@@ -29,11 +30,15 @@ const CoreDetailsStep = ({ username, onNext, onBack }) => {
     setIsSubmitting(true);
     setSuggestions([]);
     try {
-      await apiClient.patch('/users/onboarding', {
+      const res = await apiClient.patch('/users/onboarding', {
         username: username,
         name: data.name,
         bio: data.bio
       });
+      
+      if (res.data?.data?.user) {
+        useAuthStore.getState().setUser(res.data.data.user);
+      }
       
       toast.success("Profile setup complete!");
       onNext();

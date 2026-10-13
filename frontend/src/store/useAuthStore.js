@@ -32,25 +32,17 @@ const useAuthStore = create((set, get) => ({
     if (_initPromise) return _initPromise;
 
     _initPromise = (async () => {
-      // Proactively refresh the access token before calling /users/me, but ONLY
-      // if we have a session hint. This prevents a 401 on the first request after
-      // the access token expired (page idle, server restart, etc.) while also
-      // avoiding an extra server hit for unauthenticated / guest users.
-      //
-      // Security note: localStorage is JS-readable, but this flag is purely a
-      // performance hint — it cannot grant access. The real auth decision is made
-      // server-side via the HttpOnly refreshToken cookie which JS cannot touch.
-      // The refresh endpoint is also rate-limited to mitigate abuse.
-      if (localStorage.getItem('isAuthenticated') === 'true') {
-        try {
-          await apiClient.post('/auth/refresh');
-        } catch {
-          // Refresh failed — either the refresh token expired or was revoked.
-          // fetchUser below will confirm the final auth state.
-        }
+      // If there is no session hint, we are an unauthenticated guest.
+      // Settle immediately without making any unnecessary network calls.
+      if (localStorage.getItem('isAuthenticated') !== 'true') {
+        set({ user: null, isInitializing: false });
+        return null;
       }
 
-      await get().fetchUser();
+      // If we have a session hint, fetch the current user.
+      // If the access token is expired, the axios interceptor will handle
+      // the refresh rotation and retry automatically.
+      return await get().fetchUser();
     })();
 
     return _initPromise;
@@ -58,21 +50,27 @@ const useAuthStore = create((set, get) => ({
 
   clearUser: () => {
     localStorage.removeItem('isAuthenticated');
-    set({ user: null });
+    _initPromise = null;
+    set({ user: null, isInitializing: false });
   },
 
   logout: async () => {
     try {
       await apiClient.post('/auth/logout');
-      localStorage.removeItem('isAuthenticated');
-      set({ user: null });
     } catch (error) {
       console.error('Logout failed', error);
+    } finally {
+      localStorage.removeItem('isAuthenticated');
+      _initPromise = null;
+      set({ user: null, isInitializing: false });
     }
   },
 
   setUser: (user) => {
-    set({ user });
+    if (user) {
+      localStorage.setItem('isAuthenticated', 'true');
+    }
+    set({ user, isInitializing: false });
   },
 }));
 

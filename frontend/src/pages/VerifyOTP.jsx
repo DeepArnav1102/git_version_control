@@ -6,6 +6,7 @@ import loadingAnimation from '../assets/Loading V2/loadingV2.json';
 import { useLocation } from 'react-router-dom';
 import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
+import useAuthStore from '../store/useAuthStore';
 
 export default function VerifyOTP({ onBack, onVerify }) {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -71,10 +72,11 @@ export default function VerifyOTP({ onBack, onVerify }) {
           otp: otpValue,
         });
         jsonToast.success('Email verified successfully');
-        localStorage.setItem('isAuthenticated', 'true');
         setIsLoading(false);
 
         const user = res.data.data.user;
+        useAuthStore.getState().setUser(user);
+
         if (!user.username) {
           navigate('/onboarding', { replace: true });
         } else {

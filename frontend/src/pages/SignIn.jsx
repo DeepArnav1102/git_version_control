@@ -7,9 +7,11 @@ import loadingAnimation from '../assets/Loading V2/loadingV2.json';
 import { useGoogleLogin } from '@react-oauth/google';
 import apiClient from '../lib/axios';
 import { jsonToast } from '../lib/jsonToast';
+import useAuthStore from '../store/useAuthStore';
 
 export default function SignIn() {
   const navigate = useNavigate();
+  const setUser = useAuthStore(state => state.setUser);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -24,9 +26,10 @@ export default function SignIn() {
           redirectUri: 'postmessage',
         });
         jsonToast.success('Google Sign-In successful');
-        localStorage.setItem('isAuthenticated', 'true');
 
         const user = res.data.data.user;
+        setUser(user);
+
         if (!user.username) {
           navigate('/onboarding', { replace: true });
         } else {
@@ -47,10 +50,11 @@ export default function SignIn() {
     try {
       const res = await apiClient.post('/auth/login', { email, password });
       jsonToast.success('Login successful');
-      localStorage.setItem('isAuthenticated', 'true');
-      setIsLoading(false);
 
       const user = res.data.data.user;
+      setUser(user);
+      setIsLoading(false);
+
       if (!user.username) {
         navigate('/onboarding', { replace: true });
       } else {
