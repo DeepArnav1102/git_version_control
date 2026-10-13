@@ -65,9 +65,8 @@ export default function ProfileDropdown() {
       {/* Avatar button */}
       <div
         onClick={() => setDropdownOpen((prev) => !prev)}
-        className={`w-9 h-9 ml-1 rounded-full overflow-hidden border-2 cursor-pointer transition-all shadow-sm ${
-          dropdownOpen ? 'border-gray-500 shadow' : 'border-gray-200 hover:border-gray-400'
-        }`}
+        className={`w-9 h-9 ml-1 rounded-full overflow-hidden border-2 cursor-pointer transition-all shadow-sm ${dropdownOpen ? 'border-gray-500 shadow' : 'border-gray-200 hover:border-gray-400'
+          }`}
       >
         <img
           src={profilePic}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import WaveScene from './WaveScene';
@@ -8,28 +8,25 @@ import useAuthStore from '../store/useAuthStore';
 export default function AuthLayout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const fetchUser = useAuthStore(state => state.fetchUser);
+  const user = useAuthStore(state => state.user);
   const isInitializing = useAuthStore(state => state.isInitializing);
   const isForgotPassword = location.pathname === '/forgot-password';
 
+  // React to the auth state set by App.jsx's initializeAuth() — no duplicate fetchUser() call here
   useEffect(() => {
-    const checkAuth = async () => {
-      const user = await fetchUser();
-      if (user) {
-        if (user.username) {
-          navigate('/dashboard', { replace: true });
-        } else {
-          navigate('/onboarding', { replace: true });
-        }
+    if (!isInitializing && user) {
+      if (user.username) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        navigate('/onboarding', { replace: true });
       }
-    };
-    checkAuth();
-  }, [fetchUser, navigate]);
+    }
+  }, [isInitializing, user, navigate]);
 
   if (isInitializing) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        {/* Prevent flashing the login form */}
+        {/* Prevent flashing the login form while auth state is being resolved */}
       </div>
     );
   }

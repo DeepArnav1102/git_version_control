@@ -16,8 +16,10 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Only attempt refresh on 401 and only once per request
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Only attempt refresh on 401, once per request, and never for the
+    // refresh endpoint itself (prevents an infinite refresh-of-refresh loop).
+    const isRefreshCall = originalRequest.url?.includes('/auth/refresh');
+    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshCall) {
       originalRequest._retry = true;
 
       try {
@@ -47,7 +49,7 @@ apiClient.interceptors.response.use(
         useAuthStore.getState().clearUser();
 
         // Only redirect if we are not already on an auth page
-        const publicPaths = ['/sign-in', '/sign-up', '/forgot-password', '/verify-otp'];
+        const publicPaths = ['/sign-in', '/signup', '/forgot-password', '/verify'];
         const isPublic = publicPaths.some((p) => window.location.pathname.startsWith(p));
         if (!isPublic) {
           window.location.href = '/sign-in';

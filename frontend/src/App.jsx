@@ -10,25 +10,25 @@ import { Lottie } from 'lottie-react';
 import loadingAnimation from './assets/Loading V2/loadingV2.json';
 
 // Lazy-loaded pages — each is a separate JS chunk, loaded only when visited
-const SignIn         = lazy(() => import('./pages/SignIn'));
-const SignUp         = lazy(() => import('./pages/SignUp'));
-const VerifyOTP      = lazy(() => import('./pages/VerifyOTP'));
+const SignIn = lazy(() => import('./pages/SignIn'));
+const SignUp = lazy(() => import('./pages/SignUp'));
+const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const OnboardingFlow = lazy(() => import('./pages/Onboarding/OnboardingFlow'));
-const Dashboard      = lazy(() => import('./pages/Dashboard'));
-const Profile        = lazy(() => import('./pages/Profile'));
-const IDE            = lazy(() => import('./pages/IDE'));
-const CreateRepo     = lazy(() => import('./pages/CreateRepo'));
-const RepoDetail     = lazy(() => import('./pages/RepoDetail'));
-const Notifications  = lazy(() => import('./pages/Notifications'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Profile = lazy(() => import('./pages/Profile'));
+const IDE = lazy(() => import('./pages/IDE'));
+const CreateRepo = lazy(() => import('./pages/CreateRepo'));
+const RepoDetail = lazy(() => import('./pages/RepoDetail'));
+const Notifications = lazy(() => import('./pages/Notifications'));
 
 const PageFallback = () => (
   <div className="flex items-center justify-center w-full h-full py-20">
-    <Lottie 
-      animationData={loadingAnimation} 
-      loop={true} 
-      autoplay={true} 
-      className="w-20 h-20 opacity-80" 
+    <Lottie
+      animationData={loadingAnimation}
+      loop={true}
+      autoplay={true}
+      className="w-20 h-20 opacity-80"
     />
   </div>
 );
@@ -47,7 +47,10 @@ function AnimatedRoutes() {
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<SignIn />} />
+          <Route path="/sign-in" element={<SignIn />} />
+          <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
+          <Route path="/sign-up" element={<SignUp />} />
           <Route path="/verify" element={<VerifyOTP />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
         </Routes>
