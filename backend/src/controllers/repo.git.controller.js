@@ -432,7 +432,7 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
         if (!modified) return treeHash;
         
         const newData = JSON.stringify({ entries: newEntries });
-        const newHash = crypto.createHash('sha1').update('tree ' + newData + Date.now().toString()).digest('hex');
+        const newHash = crypto.createHash('sha256').update(newData).digest('hex');
         
         await GitObject.create({
             repositoryId,
@@ -460,7 +460,7 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
     };
     
     const newCommitDataStr = JSON.stringify(newCommitData);
-    const newCommitHash = crypto.createHash('sha1').update('commit ' + newCommitDataStr + Date.now().toString()).digest('hex');
+    const newCommitHash = crypto.createHash('sha256').update(newCommitDataStr).digest('hex');
 
     await GitObject.create({
         repositoryId: repoDoc._id,
