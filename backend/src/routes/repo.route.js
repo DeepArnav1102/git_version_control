@@ -11,7 +11,10 @@ const {
     getRepoBlob,
     getRepoCommits,
     checkObjectExists,
+    checkObjectsBatch,
     storeObject,
+    storeObjectsBatch,
+    getObjectsBatch,
     updateRef,
     getRemoteRef,
     getRemoteRefs,
@@ -212,6 +215,33 @@ router.delete('/:owner/:repo/contents/*filePath', protect, deleteRepoFile);
 
 /**
  * @swagger
+ * /api/v1/repos/{owner}/{repo}/objects/batch-check:
+ *   post:
+ *     summary: Batch check objects existence (CLI N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:owner/:repo/objects/batch-check', protect, checkObjectsBatch);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/objects/batch-store:
+ *   post:
+ *     summary: Batch store git objects (CLI N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:owner/:repo/objects/batch-store', protect, storeObjectsBatch);
+
+/**
+ * @swagger
+ * /api/v1/repos/{owner}/{repo}/objects/batch-get:
+ *   post:
+ *     summary: Batch get git objects (CLI N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:owner/:repo/objects/batch-get', protect, getObjectsBatch);
+
+/**
+ * @swagger
  * /api/v1/repos/{owner}/{repo}/objects/{hash}/exists:
  *   get:
  *     summary: Check if a git object exists (CLI)
@@ -274,6 +304,33 @@ router.get('/:owner/:repo/refs/:branch', protect, getRemoteRef);
 router.get('/:owner/:repo/objects/:hash', protect, getObject);
 
 // ─── CLI Push / Fetch Endpoints (Short path: :repo) ───────────────────
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/objects/batch-check:
+ *   post:
+ *     summary: Batch check objects existence (CLI Short path, N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:repo/objects/batch-check', protect, checkObjectsBatch);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/objects/batch-store:
+ *   post:
+ *     summary: Batch store git objects (CLI Short path, N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:repo/objects/batch-store', protect, storeObjectsBatch);
+
+/**
+ * @swagger
+ * /api/v1/repos/{repo}/objects/batch-get:
+ *   post:
+ *     summary: Batch get git objects (CLI Short path, N+1 optimization)
+ *     tags: [CLI]
+ */
+router.post('/:repo/objects/batch-get', protect, getObjectsBatch);
 
 /**
  * @swagger

@@ -95,8 +95,8 @@ const storeObject = asyncHandler(async (req, res) => {
     }
 
     const dataString = typeof data === 'string' ? data : JSON.stringify(data);
-    if (dataString.length > 5 * 1024 * 1024) { // 5MB limit
-        throw new ApiError(400, 'Data payload exceeds 5MB limit');
+    if (dataString.length > 50 * 1024 * 1024) { // 50MB limit
+        throw new ApiError(400, 'Data payload exceeds 50MB limit');
     }
 
     await GitObject.updateOne(
@@ -122,6 +122,204 @@ const storeObject = asyncHandler(async (req, res) => {
         success: true,
         message: 'Object stored successfully',
         hash,
+    });
+});
+
+
+// ============================================================
+// BATCH CHECK OBJECTS EXISTENCE (N+1 Elimination)
+// ============================================================
+
+const checkObjectsBatch = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { hashes } = req.body;
+
+    if (!Array.isArray(hashes)) {
+        throw new ApiError(400, 'hashes must be an array of SHA-256 strings');
+    }
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
+
+    const repoDoc = await resolveRepo(
+        owner && repo ? owner : null,
+        repoName,
+        req.user
+    );
+
+    if (!repoDoc) {
+        return res.status(200).json({
+            existing: [],
+            missing: hashes,
+        });
+    }
+
+    const foundObjects = await GitObject.find({
+        repositoryId: repoDoc._id,
+        hash: { $in: hashes },
+    }).select('hash -_id').lean();
+
+    const existingSet = new Set(foundObjects.map((o) => o.hash));
+    const existing = [];
+    const missing = [];
+
+    for (const h of hashes) {
+        if (existingSet.has(h)) {
+            existing.push(h);
+        } else {
+            missing.push(h);
+        }
+    }
+
+    return res.status(200).json({
+        success: true,
+        existing,
+        missing,
+    });
+});
+
+
+// ============================================================
+// BATCH STORE GIT OBJECTS (N+1 Elimination)
+// ============================================================
+
+const storeObjectsBatch = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { objects } = req.body;
+
+    if (!Array.isArray(objects)) {
+        throw new ApiError(400, 'objects must be an array');
+    }
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
+
+    const repoDoc = await resolveRepo(
+        owner && repo ? owner : null,
+        repoName,
+        req.user
+    );
+
+    if (!repoDoc) {
+        throw new ApiError(404, 'Repository not found');
+    }
+
+    if (!canUserPushToRepo(repoDoc, req.user)) {
+        throw new ApiError(
+            403,
+            'You do not have permission to push to this repository.'
+        );
+    }
+
+    if (objects.length === 0) {
+        return res.status(200).json({
+            success: true,
+            storedCount: 0,
+            stored: [],
+        });
+    }
+
+    const bulkOps = [];
+    const storedHashes = [];
+
+    for (const obj of objects) {
+        const { type: objectType, hash, data } = obj;
+
+        if (!objectType || !hash || data === undefined) {
+            continue;
+        }
+
+        if (typeof hash !== 'string' || !/^[a-f0-9]{40,64}$/.test(hash)) {
+            continue;
+        }
+
+        if (!['commit', 'tree', 'blob'].includes(objectType)) {
+            continue;
+        }
+
+        const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+
+        bulkOps.push({
+            updateOne: {
+                filter: {
+                    repositoryId: repoDoc._id,
+                    hash,
+                },
+                update: {
+                    $set: {
+                        repositoryId: repoDoc._id,
+                        hash,
+                        type: objectType,
+                        data: dataString,
+                        pushedBy: req.user._id,
+                    },
+                },
+                upsert: true,
+            },
+        });
+
+        storedHashes.push(hash);
+    }
+
+    if (bulkOps.length > 0) {
+        await GitObject.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    return res.status(200).json({
+        success: true,
+        storedCount: bulkOps.length,
+        stored: storedHashes,
+    });
+});
+
+
+// ============================================================
+// BATCH GET GIT OBJECTS (N+1 Elimination)
+// ============================================================
+
+const getObjectsBatch = asyncHandler(async (req, res) => {
+    const { owner, repo } = req.params;
+    const { hashes } = req.body;
+
+    if (!Array.isArray(hashes)) {
+        throw new ApiError(400, 'hashes must be an array of strings');
+    }
+
+    const repoName = (repo || owner)
+        .replace(/\.git$/, '')
+        .toLowerCase()
+        .trim();
+
+    const repoDoc = await resolveRepo(
+        owner && repo ? owner : null,
+        repoName,
+        req.user
+    );
+
+    if (!repoDoc) {
+        throw new ApiError(404, 'Repository not found');
+    }
+
+    if (hashes.length === 0) {
+        return res.status(200).json({
+            success: true,
+            objects: [],
+        });
+    }
+
+    const objects = await GitObject.find({
+        repositoryId: repoDoc._id,
+        hash: { $in: hashes },
+    }).select('hash type data -_id').lean();
+
+    return res.status(200).json({
+        success: true,
+        count: objects.length,
+        objects,
     });
 });
 
@@ -481,7 +679,10 @@ const getObject = asyncHandler(async (req, res) => {
 
 module.exports = {
     checkObjectExists,
+    checkObjectsBatch,
     storeObject,
+    storeObjectsBatch,
+    getObjectsBatch,
     updateRef,
     getRemoteRef,
     getRemoteRefs,
