@@ -99,17 +99,6 @@ const repositorySchema = new mongoose.Schema(
             hasPullRequests: { type: Boolean, default: true },
             hasWiki: { type: Boolean, default: false }
         },
-        branchProtection: [{
-            branchName: { type: String, required: true },
-            requireReviews: { type: Boolean, default: false },
-            preventDirectPushes: { type: Boolean, default: false }
-        }],
-        webhooks: [{
-            url: { type: String, required: true },
-            secret: { type: String },
-            events: [{ type: String }],
-            isActive: { type: Boolean, default: true }
-        }],
         isArchived: {
             type: Boolean,
             default: false

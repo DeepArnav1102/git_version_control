@@ -5,7 +5,7 @@ const PullRequest = require('../models/PullRequest.model');
 const PRComment = require('../models/PRComment.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
-const { resolveRepo } = require('../utils/repoHelpers');
+const { resolveRepo, updateBranchCommit } = require('../utils/repoHelpers');
 const { getCommitGraph, flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const crypto = require('crypto');
 
@@ -67,21 +67,17 @@ const listPullRequests = asyncHandler(async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 30;
     const skip = (page - 1) * limit;
 
-    const targetRepoDoc = await Repository.findOne({ 
-        owner: (await User.findOne({ username: owner }))._id, 
-        name: repo 
-    }).populate('owner', 'username profilePicture')
-      .populate('collaborators.user', 'username profilePicture');
-    
+    const targetRepoDoc = await resolveRepo(owner, repo, req.user);
     if (!targetRepoDoc) throw new ApiError(404, 'Repository not found');
 
-    const query = { 
+    const repoScope = { 
         $or: [
             { targetRepo: targetRepoDoc._id },
             { sourceRepo: targetRepoDoc._id }
         ]
     };
-    if (state) query.state = state;
+
+    const andConditions = [repoScope];
 
     const resolveUser = async (val) => {
         if (!val) return null;
@@ -90,20 +86,25 @@ const listPullRequests = asyncHandler(async (req, res) => {
         return u ? u._id : '000000000000000000000000'; // Return a dummy ID if not found so query returns empty
     };
 
-    if (author) query.author = await resolveUser(author);
-    if (assignee) query.assignees = await resolveUser(assignee);
-    if (reviewer) query.reviewers = await resolveUser(reviewer);
+    if (state) andConditions.push({ state });
+    if (author) andConditions.push({ author: await resolveUser(author) });
+    if (assignee) andConditions.push({ assignees: await resolveUser(assignee) });
+    if (reviewer) andConditions.push({ reviewers: await resolveUser(reviewer) });
     if (involves) {
         const invId = await resolveUser(involves);
-        query.$or = [
-            { author: invId },
-            { assignees: invId },
-            { reviewers: invId }
-        ];
+        andConditions.push({
+            $or: [
+                { author: invId },
+                { assignees: invId },
+                { reviewers: invId }
+            ]
+        });
     }
-    if (req.query.label) query['labels.name'] = req.query.label;
-    if (req.query.milestone) query.milestone = req.query.milestone;
-    if (req.query.project) query.project = req.query.project;
+    if (req.query.label) andConditions.push({ 'labels.name': req.query.label });
+    if (req.query.milestone) andConditions.push({ milestone: req.query.milestone });
+    if (req.query.project) andConditions.push({ project: req.query.project });
+
+    const query = andConditions.length > 1 ? { $and: andConditions } : repoScope;
     
     let sortQuery = { createdAt: -1 };
     if (sort === 'oldest') sortQuery = { createdAt: 1 };
@@ -171,6 +172,18 @@ const listPullRequests = asyncHandler(async (req, res) => {
     });
 });
 
+function verifyPRMatchesRepo(pr, req) {
+    if (!pr) throw new ApiError(404, 'Pull Request not found');
+    if (req.repoDoc) {
+        const targetRepoId = pr.targetRepo?._id ? pr.targetRepo._id.toString() : pr.targetRepo?.toString();
+        const sourceRepoId = pr.sourceRepo?._id ? pr.sourceRepo._id.toString() : pr.sourceRepo?.toString();
+        const currentRepoId = req.repoDoc._id.toString();
+        if (targetRepoId !== currentRepoId && sourceRepoId !== currentRepoId) {
+            throw new ApiError(404, 'Pull Request not found');
+        }
+    }
+}
+
 const getPullRequest = asyncHandler(async (req, res) => {
     const { owner, repo, id } = req.params;
     const pr = await PullRequest.findById(id)
@@ -180,14 +193,14 @@ const getPullRequest = asyncHandler(async (req, res) => {
         .populate({ path: 'sourceRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } })
         .populate({ path: 'targetRepo', select: 'name owner', populate: { path: 'owner', select: 'username' } });
 
-    if (!pr) throw new ApiError(404, 'Pull Request not found');
+    verifyPRMatchesRepo(pr, req);
     res.status(200).json({ success: true, pr });
 });
 
 const getPullRequestCommits = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const pr = await PullRequest.findById(id).populate('targetRepo').populate('sourceRepo');
-    if (!pr) throw new ApiError(404, 'Pull Request not found');
+    verifyPRMatchesRepo(pr, req);
 
     if (!pr.targetRepo || !pr.sourceRepo) {
         return res.status(200).json({ success: true, commits: [] });
@@ -214,7 +227,7 @@ const updatePullRequest = asyncHandler(async (req, res) => {
     const { state, assignees, reviewers, labels, milestone, project } = req.body;
 
     const pr = await PullRequest.findById(id).populate('targetRepo');
-    if (!pr) throw new ApiError(404, 'Pull Request not found');
+    verifyPRMatchesRepo(pr, req);
 
     const isAuthor = pr.author.toString() === req.user._id.toString();
     const isTargetOwner = pr.targetRepo.owner.toString() === req.user._id.toString();
@@ -258,7 +271,7 @@ const updatePullRequest = asyncHandler(async (req, res) => {
 const mergePullRequest = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const pr = await PullRequest.findById(id).populate('targetRepo').populate('sourceRepo');
-    if (!pr) throw new ApiError(404, 'Pull Request not found');
+    verifyPRMatchesRepo(pr, req);
 
     const isTargetOwner = pr.targetRepo.owner.toString() === req.user._id.toString();
     if (!isTargetOwner) {
@@ -321,6 +334,28 @@ const mergePullRequest = asyncHandler(async (req, res) => {
 
     // 4. Build and save new tree
     const mergedFlatTree = JSON.parse(result.mergedTree);
+
+    // Ensure all blobs required by the merged tree exist in target repository
+    if (pr.sourceRepo._id.toString() !== pr.targetRepo._id.toString()) {
+        const requiredHashes = Object.values(mergedFlatTree);
+        const existingDocs = await GitObject.find({ repositoryId: pr.targetRepo._id, hash: { $in: requiredHashes } }, { hash: 1 }).lean();
+        const existingSet = new Set(existingDocs.map(d => d.hash));
+        const missingHashes = requiredHashes.filter(h => !existingSet.has(h));
+
+        if (missingHashes.length > 0) {
+            const missingObjects = await GitObject.find({ repositoryId: pr.sourceRepo._id, hash: { $in: missingHashes } }).lean();
+            if (missingObjects.length > 0) {
+                await GitObject.insertMany(missingObjects.map(obj => ({
+                    repositoryId: pr.targetRepo._id,
+                    hash: obj.hash,
+                    type: obj.type,
+                    data: obj.data,
+                    pushedBy: req.user._id,
+                })));
+            }
+        }
+    }
+
     const newRootTreeHash = await buildAndSaveTree(pr.targetRepo._id, mergedFlatTree, req.user._id);
 
     // 5. Create Merge Commit
@@ -342,12 +377,8 @@ const mergePullRequest = asyncHandler(async (req, res) => {
         { upsert: true }
     );
 
-    // 6. Update Target Branch
-    const branchIndex = pr.targetRepo.branches.findIndex(b => b.name === pr.targetBranch);
-    pr.targetRepo.branches[branchIndex].commitHash = newCommitHash;
-    pr.targetRepo.branches[branchIndex].updatedAt = new Date();
-    
-    pr.targetRepo.latestCommit = {
+    // 6. Update Target Branch atomically
+    const latestCommitData = {
         hash: newCommitHash,
         message: commitMessage,
         tree: newRootTreeHash,
@@ -355,7 +386,7 @@ const mergePullRequest = asyncHandler(async (req, res) => {
         author: req.user.username || req.user.email,
         date: new Date()
     };
-    await pr.targetRepo.save();
+    await updateBranchCommit(pr.targetRepo._id, pr.targetBranch, newCommitHash, latestCommitData);
 
     // 7. Close PR
     pr.state = 'merged';
@@ -370,6 +401,9 @@ const mergePullRequest = asyncHandler(async (req, res) => {
 
 const getPullRequestComments = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const pr = await PullRequest.findById(id);
+    verifyPRMatchesRepo(pr, req);
+
     const comments = await PRComment.find({ pullRequest: id })
         .populate('author', 'username name email profilePicture avatar_url')
         .sort({ createdAt: 1 });
@@ -386,7 +420,7 @@ const createPullRequestComment = asyncHandler(async (req, res) => {
     }
     
     const pr = await PullRequest.findById(id);
-    if (!pr) throw new ApiError(404, 'Pull request not found');
+    verifyPRMatchesRepo(pr, req);
 
     const comment = await PRComment.create({
         content,

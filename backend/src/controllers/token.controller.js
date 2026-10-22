@@ -14,16 +14,21 @@ const requestOtp = asyncHandler(async (req, res) => {
     });
 });
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const checkTokenName = asyncHandler(async (req, res) => {
     const { name } = req.query;
-    if (!name) {
+    if (!name || typeof name !== 'string' || !name.trim()) {
         return res.status(200).json({ success: true, data: { available: true } });
     }
+
+    const trimmedName = name.trim();
+    const safeName = escapeRegex(trimmedName);
 
     const existingToken = await Token.findOne({
         userId: req.user._id,
         type: 'PERSONAL_ACCESS_TOKEN',
-        name: { $regex: new RegExp(`^${name}$`, 'i') },
+        name: { $regex: new RegExp(`^${safeName}$`, 'i') },
         isRevoked: false
     });
 
@@ -35,12 +40,13 @@ const checkTokenName = asyncHandler(async (req, res) => {
     }
 
     // Generate suggestions
-    const baseName = name;
+    const baseName = trimmedName;
+    const safeBaseName = escapeRegex(baseName);
     // Find tokens like "Name 1", "Name 2"
     const similarTokens = await Token.find({
         userId: req.user._id,
         type: 'PERSONAL_ACCESS_TOKEN',
-        name: { $regex: new RegExp(`^${baseName} \\d+$`, 'i') },
+        name: { $regex: new RegExp(`^${safeBaseName} \\d+$`, 'i') },
         isRevoked: false
     });
 
@@ -69,12 +75,18 @@ const checkTokenName = asyncHandler(async (req, res) => {
 
 const generatePAT = asyncHandler(async (req, res) => {
     const { name, otp } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+        throw new ApiError(400, 'Token name is required');
+    }
+
+    const trimmedName = name.trim();
+    const safeName = escapeRegex(trimmedName);
     
     // Check for duplicate name
     const existing = await Token.findOne({
         userId: req.user._id,
         type: 'PERSONAL_ACCESS_TOKEN',
-        name: { $regex: new RegExp(`^${name}$`, 'i') },
+        name: { $regex: new RegExp(`^${safeName}$`, 'i') },
         isRevoked: false
     });
     if (existing) {

@@ -258,7 +258,7 @@ const updatePinnedRepos = asyncHandler(async (req, res) => {
     const user = await User.findByIdAndUpdate(
         req.user._id,
         { $set: { pinnedRepos } },
-        { new: true }
+        { returnDocument: 'after' }
     ).populate({
         path: 'pinnedRepos',
         select: 'name description language isPrivate _id owner',

@@ -91,5 +91,6 @@ workspace_data/
 # Rust / N-API Build Artifacts
 native-merge/target/
 *.node
+libnative_merge.*
 .napi-rs-filesystem-reconciliation*
 rusty/

@@ -1,6 +1,9 @@
 const WebSocket = require('ws');
 const Docker = require('dockerode');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const User = require('../models/User.model');
+const { verifyAccessToken } = require('./token.service');
 
 const isWindows = process.platform === 'win32';
 const socketPath = isWindows ? '//./pipe/docker_engine' : '/var/run/docker.sock';
@@ -23,14 +26,10 @@ function initTerminalServer(server) {
     let container;
     let isClosed = false;
 
-    // Determine workspace ID from query params, cookies, or fallback
+    // Verify JWT accessToken signature to authenticate user, or assign unique ephemeral guest workspace
     let workspaceId = null;
-    try {
-      const parsedUrl = new URL(req.url, 'http://localhost');
-      workspaceId = parsedUrl.searchParams.get('workspaceId');
-    } catch (_) {}
-
-    if (!workspaceId && req.headers?.cookie) {
+    let isGuest = false;
+    if (req.headers?.cookie) {
       try {
         const cookieEntries = req.headers.cookie.split(';').map(c => {
           const [k, ...v] = c.trim().split('=');
@@ -40,14 +39,21 @@ function initTerminalServer(server) {
         if (cookies.accessToken) {
           const decoded = jwt.decode(cookies.accessToken);
           if (decoded?.userId) {
-            workspaceId = decoded.userId.toString();
+            const user = await User.findById(decoded.userId).select('securitySalt');
+            if (user?.securitySalt) {
+              verifyAccessToken(cookies.accessToken, user.securitySalt);
+              workspaceId = user._id.toString();
+            }
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        workspaceId = null;
+      }
     }
 
     if (!workspaceId) {
-      workspaceId = 'default_workspace';
+      isGuest = true;
+      workspaceId = `guest_${crypto.randomBytes(8).toString('hex')}`;
     }
 
     // Register active terminal session
@@ -77,7 +83,12 @@ function initTerminalServer(server) {
       try { if (container) await container.remove({ force: true }); } catch (_) { /* ignore kill errors */ }
 
       // Unregister active terminal session
-      if (workspaceId && workspaceId !== 'default_workspace') {
+      if (isGuest) {
+        try {
+          const { FileService } = require('./file.service');
+          await FileService.deleteWorkspace(workspaceId);
+        } catch (_) {}
+      } else if (workspaceId && workspaceId !== 'default_workspace') {
         const wsSet = activeWorkspaces.get(workspaceId);
         if (wsSet) {
           wsSet.delete(ws);
@@ -131,6 +142,7 @@ function initTerminalServer(server) {
           Memory: 256 * 1024 * 1024, // 256MB RAM limit
           NanoCpus: 500000000, // 0.5 CPU limit
           PidsLimit: 64,
+          CapDrop: ['ALL'], // Drop all Linux capabilities
           AutoRemove: false // Set to false because we are explicitly removing it with {force: true} to avoid Windows bugs
         }
       });
@@ -154,11 +166,15 @@ function initTerminalServer(server) {
 
       // Handle input and resize commands from the client
       ws.on('message', (msg) => {
-        const parsed = JSON.parse(msg);
-        if (parsed.type === 'input') {
-          execStream.write(parsed.data);
-        } else if (parsed.type === 'resize') {
-          container.resize({ h: parsed.rows, w: parsed.cols }).catch(() => { /* ignore resize errors */ });
+        try {
+          const parsed = JSON.parse(msg);
+          if (parsed.type === 'input') {
+            execStream.write(parsed.data);
+          } else if (parsed.type === 'resize') {
+            container.resize({ h: parsed.rows, w: parsed.cols }).catch(() => { /* ignore resize errors */ });
+          }
+        } catch (_) {
+          // Ignore invalid non-JSON messages to avoid crashing the server
         }
       });
 

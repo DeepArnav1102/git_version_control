@@ -50,9 +50,21 @@ const refreshLimiter = rateLimit({
     }
 });
 
+// Rate limiter for the login endpoint — prevents credential stuffing / brute-force attacks
+const loginLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 10,                 // 10 attempts per 5 minutes per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, next) => {
+        next(new ApiError(429, 'Too many login attempts. Please try again after 5 minutes.'));
+    }
+});
+
 module.exports = {
     checkUsernameLimiter,
     otpLimiter,
     searchLimiter,
-    refreshLimiter
+    refreshLimiter,
+    loginLimiter,
 };

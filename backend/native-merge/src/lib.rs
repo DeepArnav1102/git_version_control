@@ -32,10 +32,13 @@ impl Task for MergeTask {
   type JsValue = MergeResult;
 
   fn compute(&mut self) -> Result<Self::Output> {
-    // Parse the flat JSON trees
-    let base: BTreeMap<String, String> = serde_json::from_str(&self.base_tree).unwrap_or_default();
-    let ours: BTreeMap<String, String> = serde_json::from_str(&self.ours_tree).unwrap_or_default();
-    let theirs: BTreeMap<String, String> = serde_json::from_str(&self.theirs_tree).unwrap_or_default();
+    // Parse the flat JSON trees strictly
+    let base: BTreeMap<String, String> = serde_json::from_str(&self.base_tree)
+      .map_err(|e| Error::new(Status::InvalidArg, format!("Failed to parse base_tree: {}", e)))?;
+    let ours: BTreeMap<String, String> = serde_json::from_str(&self.ours_tree)
+      .map_err(|e| Error::new(Status::InvalidArg, format!("Failed to parse ours_tree: {}", e)))?;
+    let theirs: BTreeMap<String, String> = serde_json::from_str(&self.theirs_tree)
+      .map_err(|e| Error::new(Status::InvalidArg, format!("Failed to parse theirs_tree: {}", e)))?;
 
     let mut all_paths = HashSet::new();
     all_paths.extend(base.keys().cloned());
@@ -56,6 +59,20 @@ impl Task for MergeTask {
                 merged.insert(path, hash.clone());
             }
             continue;
+        }
+
+        // Explicit modify-vs-delete conflict check
+        if let Some(b) = base_hash {
+            if ours_hash.is_none() && theirs_hash.is_some() && theirs_hash != Some(b) {
+                // Ours deleted, theirs modified
+                conflicts.push(path);
+                continue;
+            }
+            if theirs_hash.is_none() && ours_hash.is_some() && ours_hash != Some(b) {
+                // Theirs deleted, ours modified
+                conflicts.push(path);
+                continue;
+            }
         }
 
         // Ours did not change -> take theirs

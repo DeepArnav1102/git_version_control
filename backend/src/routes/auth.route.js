@@ -21,7 +21,7 @@ const {
     logout,
 } = require('../controllers/auth.controller');
 const { protect } = require('../middlewares/auth.middleware');
-const { otpLimiter, refreshLimiter } = require('../middlewares/rateLimit.middleware');
+const { otpLimiter, refreshLimiter, loginLimiter } = require('../middlewares/rateLimit.middleware');
 
 const router = express.Router();
 
@@ -48,7 +48,7 @@ const router = express.Router();
  *       409:
  *         description: User already exists
  */
-router.post('/register', validate(registerSchema), register);
+router.post('/register', otpLimiter, validate(registerSchema), register);
 
 /**
  * @swagger
@@ -75,7 +75,7 @@ router.post('/register', validate(registerSchema), register);
  *       403:
  *         description: Email not verified
  */
-router.post('/login', validate(loginSchema), login);
+router.post('/login', loginLimiter, validate(loginSchema), login);
 
 /**
  * @swagger
@@ -147,7 +147,7 @@ router.post('/cli/login', validate(cliLoginSchema), cliLogin);
  *     summary: Verify CLI login using email and PAT
  *     tags: [Auth]
  */
-router.post('/cli-login', validate(cliLoginSchema), cliLogin);
+router.post('/cli-login', loginLimiter, validate(cliLoginSchema), cliLogin);
 
 /**
  * @swagger

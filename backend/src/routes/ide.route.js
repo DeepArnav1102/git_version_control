@@ -6,25 +6,49 @@ const { FileService } = require('../services/file.service');
 const { R2StorageService } = require('../services/r2Storage.service');
 const GitObject = require('../models/GitObject.model');
 const Repository = require('../models/Repository.model');
-const { resolveRepo, buildRecursiveTree } = require('../utils/repoHelpers');
-const { buildAndSaveTree } = require('../utils/gitHelpers');
+const { resolveRepo, buildRecursiveTree, updateBranchCommit } = require('../utils/repoHelpers');
+const { flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const { canUserPushToRepo, getUserRepoRole } = require('../utils/permissionHelpers');
-const { protectOptional } = require('../middlewares/auth.middleware');
+const { protect, protectOptional } = require('../middlewares/auth.middleware');
+const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
 // Apply optional auth so req.user is set when token is present
 router.use(protectOptional);
 
-// Helper to determine workspace ID (scopes workspace to logged-in user, accepts query or body override)
+// Rate limiter specifically for code execution inside sandbox container (max 20 runs per min per IP)
+const runLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    message: { error: 'Too many execution requests. Please wait a moment before running code again.' }
+});
+
+// Middleware to assign unique ephemeral guest workspace id so guest sessions do not overwrite each other
+router.use((req, res, next) => {
+    if (!req.user && !req.cookies?.guest_workspace_id && !req.headers['x-guest-workspace-id']) {
+        const guestId = crypto.randomBytes(12).toString('hex');
+        res.cookie('guest_workspace_id', guestId, {
+            httpOnly: true,
+            sameSite: 'lax',
+            maxAge: 24 * 60 * 60 * 1000
+        });
+        req.cookies = req.cookies || {};
+        req.cookies.guest_workspace_id = guestId;
+    }
+    next();
+});
+
+// Helper to determine workspace ID (scopes workspace strictly to authenticated user or isolated guest)
 const getWorkspaceId = (req) => {
-    if (req.query?.workspaceId && req.query.workspaceId !== 'undefined' && req.query.workspaceId !== 'null') {
-        return req.query.workspaceId;
+    if (req.user?._id) {
+        return req.user._id.toString();
     }
-    if (req.body?.workspaceId && req.body.workspaceId !== 'undefined' && req.body.workspaceId !== 'null') {
-        return req.body.workspaceId;
+    const guestId = req.cookies?.guest_workspace_id || req.headers['x-guest-workspace-id'];
+    if (guestId && /^[a-zA-Z0-9_-]{8,64}$/.test(guestId)) {
+        return `guest_${guestId}`;
     }
-    return req.user?._id ? req.user._id.toString() : 'default_workspace';
+    return 'guest_workspace';
 };
 
 /**
@@ -112,28 +136,27 @@ router.post('/load-codespace', async (req, res) => {
                     const commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
                     const treeHash = commitData.tree;
                     if (treeHash) {
-                        const fileTree = await buildRecursiveTree(treeHash, repoDoc._id, '');
+                        const flatFiles = await flattenTree(repoDoc._id, treeHash);
+                        const blobHashes = [...new Set(Object.values(flatFiles))];
 
-                        // Helper to recursively write tree
-                        const writeTreeToSandbox = async (nodes, currentPath = '') => {
-                            for (const node of nodes) {
-                                const nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
-                                if (node.object_type === 'tree') {
-                                    await FileService.create(workspaceId, nodePath, 'folder');
-                                    if (node.children) {
-                                        await writeTreeToSandbox(node.children, nodePath);
-                                    }
-                                } else if (node.object_type === 'blob') {
-                                    const blobObj = await GitObject.findOne({ hash: node.object_hash, type: 'blob' });
-                                    if (blobObj) {
-                                        await FileService.create(workspaceId, nodePath, 'file');
-                                        await FileService.updateFile(workspaceId, nodePath, blobObj.data);
-                                    }
-                                }
+                        // Fetch all blobs in a single batch query
+                        const blobMap = new Map();
+                        if (blobHashes.length > 0) {
+                            const blobObjs = await GitObject.find({
+                                repositoryId: repoDoc._id,
+                                hash: { $in: blobHashes },
+                                type: 'blob'
+                            }).lean();
+                            for (const b of blobObjs) {
+                                blobMap.set(b.hash, b.data);
                             }
-                        };
+                        }
 
-                        await writeTreeToSandbox(fileTree);
+                        // Write files directly to sandbox
+                        for (const [filePath, bHash] of Object.entries(flatFiles)) {
+                            const content = blobMap.get(bHash) ?? '';
+                            await FileService.updateFile(workspaceId, filePath, content);
+                        }
                     }
                 }
             } else {
@@ -245,12 +268,8 @@ router.post('/push-codespace', async (req, res) => {
         }
 
         const defaultBranch = repoDoc.defaultBranch || 'main';
-        if (!repoDoc.branches) repoDoc.branches = [];
-        let branch = repoDoc.branches.find(b => b.name === defaultBranch);
-        if (!branch) {
-            branch = { name: defaultBranch, commitHash: null, updatedAt: new Date() };
-            repoDoc.branches.push(branch);
-        }
+        const existingBranch = repoDoc.branches?.find(b => b.name === defaultBranch);
+        const parentCommitHash = existingBranch?.commitHash || null;
 
         // 1. Gather all workspace files
         const filesFlat = await FileService.getAllFilesFlat(workspaceId);
@@ -282,7 +301,6 @@ router.post('/push-codespace', async (req, res) => {
         const rootTreeHash = await buildAndSaveTree(repoDoc._id, flatTree, req.user._id);
 
         // 4. Create commit object
-        const parentCommitHash = branch.commitHash;
         const newCommitData = {
             tree: rootTreeHash,
             parent: parentCommitHash,
@@ -308,11 +326,8 @@ router.post('/push-codespace', async (req, res) => {
             { upsert: true }
         );
 
-        // 5. Update branch reference
-        branch.commitHash = newCommitHash;
-        branch.updatedAt = new Date();
-
-        repoDoc.latestCommit = {
+        // 5. Update branch reference atomically
+        const latestCommitData = {
             hash: newCommitHash,
             message: newCommitData.message,
             tree: rootTreeHash,
@@ -321,7 +336,7 @@ router.post('/push-codespace', async (req, res) => {
             date: new Date(),
         };
 
-        await repoDoc.save();
+        await updateBranchCommit(repoDoc._id, defaultBranch, newCommitHash, latestCommitData);
 
         // Snapshot and upload Python environment packages to Cloudflare R2
         try {
@@ -562,7 +577,7 @@ router.delete('/files', async (req, res) => {
  *   post:
  *     summary: Execute Python code in the sandbox
  */
-router.post('/run', async (req, res) => {
+router.post('/run', protect, runLimiter, async (req, res) => {
     try {
         const workspaceId = getWorkspaceId(req);
         const { filePath, code, stdin } = req.body;

@@ -2,7 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
-const { resolveRepo } = require('../utils/repoHelpers');
+const { resolveRepo, updateBranchCommit } = require('../utils/repoHelpers');
 const { canUserPushToRepo } = require('../utils/permissionHelpers');
 
 
@@ -396,33 +396,11 @@ const updateRef = asyncHandler(async (req, res) => {
         }
     }
 
-    const branchIndex = repoDoc.branches.findIndex(
-        (item) => item.name === cleanBranch
-    );
-
-    if (branchIndex >= 0) {
-        repoDoc.branches[branchIndex].commitHash =
-            commitHash;
-
-        repoDoc.branches[branchIndex].updatedAt =
-            new Date();
-    } else {
-        repoDoc.branches.push({
-            name: cleanBranch,
-            commitHash,
-            updatedAt: new Date(),
-        });
-    }
-
-    if (!repoDoc.defaultBranch) {
-        repoDoc.defaultBranch = cleanBranch;
-    }
-
     let safeMessage = commitData.message || `Update ${cleanBranch}`;
     if (typeof safeMessage !== 'string') safeMessage = String(safeMessage);
     if (safeMessage.length > 5000) safeMessage = safeMessage.substring(0, 5000) + '...';
 
-    repoDoc.latestCommit = {
+    const latestCommitData = {
         hash: commitHash,
         message: safeMessage,
         tree: commitData.tree,
@@ -440,7 +418,7 @@ const updateRef = asyncHandler(async (req, res) => {
         date: new Date(),
     };
 
-    await repoDoc.save();
+    await updateBranchCommit(repoDoc._id, cleanBranch, commitHash, latestCommitData);
 
     return res.status(200).json({
         success: true,
@@ -596,23 +574,20 @@ const deleteRemoteRef = asyncHandler(async (req, res) => {
         );
     }
 
-    const branchIndex = repoDoc.branches.findIndex(
+    const branchExists = repoDoc.branches.some(
         (item) => item.name === cleanBranch
     );
 
-    if (branchIndex === -1) {
+    if (!branchExists) {
         throw new ApiError(
             404,
             `Branch '${cleanBranch}' not found`
         );
     }
 
-    repoDoc.branches.splice(
-        branchIndex,
-        1
-    );
-
-    await repoDoc.save();
+    await Repository.findByIdAndUpdate(repoDoc._id, {
+        $pull: { branches: { name: cleanBranch } }
+    });
 
     return res.status(200).json({
         success: true,

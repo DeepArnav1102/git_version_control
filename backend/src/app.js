@@ -26,8 +26,18 @@ app.use('/api', limiter);
 setupSwagger(app);
 
 app.use(helmet());
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+
 app.use(cors({
-    origin: true, // Dynamically reflects the request origin
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Blocked by CORS policy'));
+        }
+    },
     credentials: true,
 }));
 app.use(cookieParser());

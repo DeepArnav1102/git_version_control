@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { BookMarked } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import 'github-markdown-css/github-markdown-light.css';
 import apiClient from '../../lib/axios';
 
@@ -37,8 +36,7 @@ export default function ReadmeBox({ owner, repo, entry }) {
           <span className="text-xs text-gray-400">Loading README...</span>
         ) : content ? (
           <ReactMarkdown 
-            remarkPlugins={[remarkGfm]} 
-            rehypePlugins={[rehypeRaw]}
+            remarkPlugins={[remarkGfm]}
           >
             {content}
           </ReactMarkdown>

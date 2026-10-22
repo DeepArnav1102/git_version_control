@@ -207,23 +207,18 @@ const refresh = asyncHandler(async (req, res) => {
 
     if (!tokenDoc) throw new ApiError(401, 'Invalid refresh token');
     if (tokenDoc.expiresAt < new Date()) throw new ApiError(401, 'Refresh token expired');
-    
 
-    // If the token is revoked AND its 30-second grace period has expired, reject it.
-    // (Revoked tokens get expiresAt = now+30s, so we check > new Date() for the grace period.)
-    if (tokenDoc.isRevoked && tokenDoc.expiresAt <= new Date()) {
-        throw new ApiError(401, 'Refresh token has already been used/revoked');
-    }
+    const wasAlreadyRevoked = tokenDoc.isRevoked;
 
     const user = await User.findById(tokenDoc.userId);
     if (!user) throw new ApiError(401, 'User no longer exists');
 
-    // Instead of deleting the old refresh token immediately (which causes race conditions
-    // with multiple tabs), we mark it as revoked and give it a short 30-second grace period 
-    // by updating expiresAt. MongoDB's TTL index will clean it up automatically.
-    tokenDoc.isRevoked = true;
-    tokenDoc.expiresAt = new Date(Date.now() + 30 * 1000); // 30 seconds
-    await tokenDoc.save();
+    // Only set the 30-second grace window once on initial revocation; never extend on repeat calls
+    if (!wasAlreadyRevoked) {
+        tokenDoc.isRevoked = true;
+        tokenDoc.expiresAt = new Date(Date.now() + 30 * 1000); // 30-second fixed grace window
+        await tokenDoc.save();
+    }
 
     const { accessToken, refreshToken: newRefreshToken } = await generateAuthTokens(user);
     setRefreshTokenCookie(res, newRefreshToken);

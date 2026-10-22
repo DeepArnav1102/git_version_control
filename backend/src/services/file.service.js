@@ -39,7 +39,7 @@ class FileService {
         const absolutePath = path.resolve(userWorkspace, relativePath);
 
         // Security Check: Ensure the resolved path strictly starts with the user's workspace path
-        if (!absolutePath.startsWith(userWorkspace)) {
+        if (absolutePath !== userWorkspace && !absolutePath.startsWith(userWorkspace + path.sep)) {
             throw new Error('Access Denied: Path traversal detected.');
         }
 
@@ -162,6 +162,7 @@ class FileService {
      */
     static async updateFile(userId, filePath, content) {
         const securePath = this.getSecurePath(userId, filePath);
+        await fs.mkdir(path.dirname(securePath), { recursive: true });
         await fs.writeFile(securePath, content, 'utf8');
         return { success: true };
     }

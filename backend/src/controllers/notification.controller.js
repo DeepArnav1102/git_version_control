@@ -55,7 +55,7 @@ const markAsRead = asyncHandler(async (req, res) => {
     const notification = await Notification.findOneAndUpdate(
         { _id: id, recipient: req.user._id },
         { isRead: true },
-        { new: true }
+        { returnDocument: 'after' }
     );
 
     if (!notification) {
@@ -86,7 +86,7 @@ const markAsArchived = asyncHandler(async (req, res) => {
     const notification = await Notification.findOneAndUpdate(
         { _id: id, recipient: req.user._id },
         { isArchived: true, isRead: true }, // archiving implicitly marks as read
-        { new: true }
+        { returnDocument: 'after' }
     );
 
     if (!notification) {

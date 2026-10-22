@@ -33,22 +33,31 @@ const resolveRepo = async (ownerParam, repoName, currentUser = null) => {
     if (!ownerId) return null;
 
     const normalizedRepoName = repoName.replace(/\.git$/, '').toLowerCase().trim();
-    return await Repository.findOne({ owner: ownerId, name: normalizedRepoName });
+    const repo = await Repository.findOne({ owner: ownerId, name: normalizedRepoName });
+    if (!repo) return null;
+
+    // Enforce privacy: private repos are only accessible to owner and approved collaborators
+    if (repo.isPrivate) {
+        const userIdStr = currentUser?._id ? currentUser._id.toString() : null;
+        if (!userIdStr) return null;
+        const isOwner = repo.owner.toString() === userIdStr;
+        const isCollaborator = Array.isArray(repo.collaborators) && repo.collaborators.some(c => {
+            const cId = c.user?._id ? c.user._id.toString() : c.user?.toString();
+            return cId === userIdStr;
+        });
+        if (!isOwner && !isCollaborator) return null;
+    }
+
+    return repo;
 };
 
 // Helper: recursively build full directory tree hierarchy for navigation tree
 const buildRecursiveTree = async (treeHash, repositoryId, currentSubPath = '') => {
-    let obj = await GitObject.findOne({
+    const obj = await GitObject.findOne({
         repositoryId,
         hash: treeHash,
         type: 'tree',
     });
-    if (!obj) {
-        obj = await GitObject.findOne({
-            hash: treeHash,
-            type: 'tree',
-        });
-    }
     if (!obj) return [];
     let parsed;
     try {
@@ -84,8 +93,63 @@ const buildRecursiveTree = async (treeHash, repositoryId, currentSubPath = '') =
     });
 };
 
+/**
+ * Atomically updates a branch's commitHash and updatedAt, creating the branch if it doesn't exist,
+ * and updates latestCommit. Prevents race conditions during concurrent pushes/merges.
+ */
+const updateBranchCommit = async (repoId, branchName, commitHash, latestCommitData = null) => {
+    const now = new Date();
+    const setFields = {
+        'branches.$.commitHash': commitHash,
+        'branches.$.updatedAt': now,
+    };
+    if (latestCommitData) {
+        setFields.latestCommit = latestCommitData;
+    }
+
+    // Try updating existing branch
+    let updatedRepo = await Repository.findOneAndUpdate(
+        { _id: repoId, 'branches.name': branchName },
+        { $set: setFields },
+        { returnDocument: 'after' }
+    );
+
+    // If branch didn't exist in array, push it atomically
+    if (!updatedRepo) {
+        const updateDoc = {
+            $push: {
+                branches: {
+                    name: branchName,
+                    commitHash,
+                    updatedAt: now,
+                }
+            }
+        };
+        if (latestCommitData) {
+            updateDoc.$set = { latestCommit: latestCommitData };
+        }
+        updatedRepo = await Repository.findByIdAndUpdate(
+            repoId,
+            updateDoc,
+            { returnDocument: 'after' }
+        );
+    }
+
+    if (updatedRepo && !updatedRepo.defaultBranch) {
+        updatedRepo = await Repository.findByIdAndUpdate(
+            repoId,
+            { $set: { defaultBranch: branchName } },
+            { returnDocument: 'after' }
+        );
+    }
+
+    return updatedRepo;
+};
+
 module.exports = {
     resolveUser,
     resolveRepo,
-    buildRecursiveTree
+    buildRecursiveTree,
+    updateBranchCommit,
 };
+
