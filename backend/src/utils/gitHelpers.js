@@ -1,4 +1,5 @@
 const GitObject = require('../models/GitObject.model');
+const { parseGitObjectData } = require('./repoHelpers');
 
 const diff = require('diff');
 
@@ -68,7 +69,7 @@ async function getCommitGraph(repoId, headHash, baseHash) {
             const objs = await GitObject.find({ repositoryId: { $in: repoIds }, hash: { $in: hashesToFetch }, type: 'commit' });
             for (const obj of objs) {
                 try {
-                    commitMap.set(obj.hash, { parsed: typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data, createdAt: obj.createdAt });
+                    commitMap.set(obj.hash, { parsed: parseGitObjectData(obj), createdAt: obj.createdAt });
                 } catch {}
             }
         }
@@ -162,19 +163,18 @@ async function flattenTree(repoId, rootTreeHash) {
         // 3. Create a lookup map for instant access
         const treeMap = {};
         for (const obj of treeObjects) {
-            treeMap[obj.hash] = obj.data;
+            treeMap[obj.hash] = parseGitObjectData(obj);
         }
 
         const nextQueue = [];
 
         // 4. Process the current queue and queue up the next level of trees
         for (const { hash, prefix } of queue) {
-            const dataStr = treeMap[hash];
-            if (!dataStr) continue;
+            const parsed = treeMap[hash];
+            if (!parsed) continue;
 
             let entries = [];
             try {
-                const parsed = JSON.parse(dataStr);
                 entries = Array.isArray(parsed) ? parsed : (parsed.entries || []);
             } catch (e) {
                 entries = [];

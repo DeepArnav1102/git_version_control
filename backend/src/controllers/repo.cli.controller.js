@@ -2,7 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
-const { resolveRepo, updateBranchCommit } = require('../utils/repoHelpers');
+const { resolveRepo, updateBranchCommit, parseGitObjectData } = require('../utils/repoHelpers');
 const { canUserPushToRepo } = require('../utils/permissionHelpers');
 
 
@@ -57,6 +57,7 @@ const storeObject = asyncHandler(async (req, res) => {
         type: objectType,
         hash,
         data,
+        encoding,
     } = req.body;
 
     if (!objectType || !hash || data === undefined) {
@@ -99,19 +100,24 @@ const storeObject = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'Data payload exceeds 50MB limit');
     }
 
+    const updateFields = {
+        repositoryId: repoDoc._id,
+        hash,
+        type: objectType,
+        data: dataString,
+        pushedBy: req.user._id,
+    };
+    if (encoding === 'base64' || encoding === 'utf8') {
+        updateFields.encoding = encoding;
+    }
+
     await GitObject.updateOne(
         {
             repositoryId: repoDoc._id,
             hash,
         },
         {
-            $set: {
-                repositoryId: repoDoc._id,
-                hash,
-                type: objectType,
-                data: dataString,
-                pushedBy: req.user._id,
-            },
+            $set: updateFields,
         },
         {
             upsert: true,
@@ -227,7 +233,7 @@ const storeObjectsBatch = asyncHandler(async (req, res) => {
     const storedHashes = [];
 
     for (const obj of objects) {
-        const { type: objectType, hash, data } = obj;
+        const { type: objectType, hash, data, encoding } = obj;
 
         if (!objectType || !hash || data === undefined) {
             continue;
@@ -243,6 +249,17 @@ const storeObjectsBatch = asyncHandler(async (req, res) => {
 
         const dataString = typeof data === 'string' ? data : JSON.stringify(data);
 
+        const setDoc = {
+            repositoryId: repoDoc._id,
+            hash,
+            type: objectType,
+            data: dataString,
+            pushedBy: req.user._id,
+        };
+        if (encoding === 'base64' || encoding === 'utf8') {
+            setDoc.encoding = encoding;
+        }
+
         bulkOps.push({
             updateOne: {
                 filter: {
@@ -250,13 +267,7 @@ const storeObjectsBatch = asyncHandler(async (req, res) => {
                     hash,
                 },
                 update: {
-                    $set: {
-                        repositoryId: repoDoc._id,
-                        hash,
-                        type: objectType,
-                        data: dataString,
-                        pushedBy: req.user._id,
-                    },
+                    $set: setDoc,
                 },
                 upsert: true,
             },
@@ -314,7 +325,7 @@ const getObjectsBatch = asyncHandler(async (req, res) => {
     const objects = await GitObject.find({
         repositoryId: repoDoc._id,
         hash: { $in: hashes },
-    }).select('hash type data -_id').lean();
+    }).select('hash type data encoding -_id').lean();
 
     return res.status(200).json({
         success: true,
@@ -390,7 +401,7 @@ const updateRef = asyncHandler(async (req, res) => {
 
     if (commitObj) {
         try {
-            commitData = JSON.parse(commitObj.data);
+            commitData = parseGitObjectData(commitObj) || {};
         } catch (error) {
             commitData = {};
         }
@@ -644,6 +655,7 @@ const getObject = asyncHandler(async (req, res) => {
         hash: object.hash,
         type: object.type,
         data: object.data,
+        encoding: object.encoding || undefined,
     });
 });
 

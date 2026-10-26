@@ -384,6 +384,7 @@ const forkRepo = asyncHandler(async (req, res) => {
             hash: obj.hash,
             type: obj.type,
             data: obj.data,
+            encoding: obj.encoding,
             pushedBy: req.user._id
         }));
         await GitObject.insertMany(newObjects);
@@ -434,6 +435,7 @@ const syncRepo = asyncHandler(async (req, res) => {
             hash: o.hash,
             type: o.type,
             data: o.data,
+            encoding: o.encoding,
             pushedBy: req.user._id
         }));
 

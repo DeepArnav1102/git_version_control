@@ -449,6 +449,7 @@ export default function RepoDetail() {
         setActiveFile({
           name: entry.name,
           content: res.data.data.content,
+          encoding: res.data.data.encoding,
           hash: entry.object_hash,
           size: res.data.data.size,
         });
@@ -480,6 +481,7 @@ export default function RepoDetail() {
       setActiveFile({
         name: entry.name,
         content: res.data.data.content,
+        encoding: res.data.data.encoding,
         hash: entry.object_hash,
         size: res.data.data.size,
       });

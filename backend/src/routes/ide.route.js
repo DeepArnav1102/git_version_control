@@ -6,7 +6,7 @@ const { FileService } = require('../services/file.service');
 const { R2StorageService } = require('../services/r2Storage.service');
 const GitObject = require('../models/GitObject.model');
 const Repository = require('../models/Repository.model');
-const { resolveRepo, buildRecursiveTree, updateBranchCommit } = require('../utils/repoHelpers');
+const { resolveRepo, buildRecursiveTree, updateBranchCommit, parseGitObjectData } = require('../utils/repoHelpers');
 const { flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const { canUserPushToRepo, getUserRepoRole } = require('../utils/permissionHelpers');
 const { protect, protectOptional } = require('../middlewares/auth.middleware');
@@ -133,8 +133,8 @@ router.post('/load-codespace', async (req, res) => {
                 commitHash = branch.commitHash;
                 const commitObj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: commitHash, type: 'commit' });
                 if (commitObj) {
-                    const commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
-                    const treeHash = commitData.tree;
+                    const commitData = parseGitObjectData(commitObj);
+                    const treeHash = commitData?.tree;
                     if (treeHash) {
                         const flatFiles = await flattenTree(repoDoc._id, treeHash);
                         const blobHashes = [...new Set(Object.values(flatFiles))];

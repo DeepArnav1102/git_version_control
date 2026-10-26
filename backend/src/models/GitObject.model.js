@@ -22,6 +22,11 @@ const gitObjectSchema = new mongoose.Schema(
             type: String,
             default: '',
         },
+        encoding: {
+            type: String,
+            enum: ['base64', 'utf8', null],
+            default: null,
+        },
         pushedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',

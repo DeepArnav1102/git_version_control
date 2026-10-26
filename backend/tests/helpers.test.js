@@ -146,3 +146,21 @@ test('native-merge: three-way merge state machine', async (t) => {
         );
     });
 });
+
+test('binary-encoding: base64 and binary blob handling', async (t) => {
+    const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0xC3, 0x28, 0x00]);
+    const b64 = PNG_BYTES.toString('base64');
+
+    await t.test('Buffer round-trips binary PNG magic bytes via base64', () => {
+        const decoded = Buffer.from(b64, 'base64');
+        assert.deepEqual(decoded, PNG_BYTES);
+    });
+
+    await t.test('binary size matches byte length rather than base64 string length', () => {
+        const decoded = Buffer.from(b64, 'base64');
+        assert.equal(decoded.length, PNG_BYTES.length);
+        assert.equal(PNG_BYTES.length, 10);
+        assert.ok(b64.length > PNG_BYTES.length);
+    });
+});
+

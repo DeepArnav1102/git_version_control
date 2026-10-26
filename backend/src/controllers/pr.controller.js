@@ -5,7 +5,7 @@ const PullRequest = require('../models/PullRequest.model');
 const PRComment = require('../models/PRComment.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
-const { resolveRepo, updateBranchCommit } = require('../utils/repoHelpers');
+const { resolveRepo, updateBranchCommit, parseGitObjectData } = require('../utils/repoHelpers');
 const { getCommitGraph, flattenTree, buildAndSaveTree } = require('../utils/gitHelpers');
 const crypto = require('crypto');
 
@@ -302,9 +302,9 @@ const mergePullRequest = asyncHandler(async (req, res) => {
         GitObject.findOne({ repositoryId: pr.sourceRepo._id, hash: sourceHash, type: 'commit' })
     ]);
 
-    const baseTreeHash = JSON.parse(baseCommit.data).tree;
-    const oursTreeHash = JSON.parse(oursCommit.data).tree;
-    const theirsTreeHash = JSON.parse(theirsCommit.data).tree;
+    const baseTreeHash = parseGitObjectData(baseCommit)?.tree;
+    const oursTreeHash = parseGitObjectData(oursCommit)?.tree;
+    const theirsTreeHash = parseGitObjectData(theirsCommit)?.tree;
 
     const [baseTree, oursTree, theirsTree] = await Promise.all([
         flattenTree(pr.targetRepo._id, baseTreeHash),
@@ -350,6 +350,7 @@ const mergePullRequest = asyncHandler(async (req, res) => {
                     hash: obj.hash,
                     type: obj.type,
                     data: obj.data,
+                    encoding: obj.encoding,
                     pushedBy: req.user._id,
                 })));
             }

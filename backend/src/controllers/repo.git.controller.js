@@ -5,7 +5,7 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const User = require('../models/User.model');
 const mongoose = require('mongoose');
-const { resolveUser, resolveRepo } = require('../utils/repoHelpers');
+const { resolveUser, resolveRepo, parseGitObjectData } = require('../utils/repoHelpers');
 const { getCommitGraph, generateUnifiedDiff, flattenTree } = require('../utils/gitHelpers');
 
 async function getLastCommitsForEntries(repoId, startCommitHash, pathSegments, entries) {
@@ -20,7 +20,7 @@ async function getLastCommitsForEntries(repoId, startCommitHash, pathSegments, e
         const obj = await GitObject.findOne({ repositoryId: Array.isArray(repoId) ? { $in: repoId } : repoId, hash, type }).lean();
         if (obj) {
             try {
-                obj.parsed = typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data;
+                obj.parsed = parseGitObjectData(obj) || {};
             } catch {
                 obj.parsed = {};
             }
@@ -148,7 +148,10 @@ const getRepoTree = asyncHandler(async (req, res) => {
 
     let commitData;
     try {
-        commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
+        commitData = parseGitObjectData(commitObj);
+        if (!commitData || typeof commitData !== 'object') {
+            throw new Error('Not an object');
+        }
     } catch {
         throw new ApiError(500, 'Invalid commit format');
     }
@@ -169,7 +172,7 @@ const getRepoTree = asyncHandler(async (req, res) => {
     });
     if (!currentTreeObj) throw new ApiError(404, 'Root tree not found');
 
-    let rootTreeData = typeof currentTreeObj.data === 'string' ? JSON.parse(currentTreeObj.data) : currentTreeObj.data;
+    let rootTreeData = parseGitObjectData(currentTreeObj);
     let treeData = rootTreeData;
 
 
@@ -179,7 +182,7 @@ const getRepoTree = asyncHandler(async (req, res) => {
     if (cleanPath) {
         const segments = cleanPath.split('/').filter(Boolean);
         for (const segment of segments) {
-            const match = treeData.entries.find(
+            const match = treeData?.entries?.find(
                 (e) => e.name === segment && e.object_type === 'tree'
             );
             if (!match) {
@@ -191,7 +194,7 @@ const getRepoTree = asyncHandler(async (req, res) => {
                 type: 'tree',
             });
             if (!currentTreeObj) throw new ApiError(404, `Tree object not found for ${segment}`);
-            treeData = typeof currentTreeObj.data === 'string' ? JSON.parse(currentTreeObj.data) : currentTreeObj.data;
+            treeData = parseGitObjectData(currentTreeObj);
         }
     }
 
@@ -215,7 +218,7 @@ const getRepoTree = asyncHandler(async (req, res) => {
         const treeMap = new Map();
         for (const t of allTreeObjs) {
             try {
-                treeMap.set(t.hash, typeof t.data === 'string' ? JSON.parse(t.data) : t.data);
+                treeMap.set(t.hash, parseGitObjectData(t));
             } catch { /* skip malformed */ }
         }
 
@@ -293,12 +296,18 @@ const getRepoBlob = asyncHandler(async (req, res) => {
 
     if (!blobObj) throw new ApiError(404, 'File content not found');
 
+    const isBase64 = blobObj.encoding === 'base64';
+    const computedSize = isBase64
+        ? Buffer.from(blobObj.data || '', 'base64').length
+        : Buffer.byteLength(blobObj.data || '', 'utf8');
+
     res.status(200).json({
         success: true,
         data: {
             hash: blobObj.hash,
             content: blobObj.data,
-            size: Buffer.byteLength(blobObj.data || '', 'utf8'),
+            encoding: blobObj.encoding || (isBase64 ? 'base64' : 'utf8'),
+            size: computedSize,
         },
     });
 });
@@ -331,7 +340,7 @@ const getRepoCommits = asyncHandler(async (req, res) => {
             }).lean();
             for (const obj of objs) {
                 try {
-                    const parsed = typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data;
+                    const parsed = parseGitObjectData(obj);
                     commitMap.set(obj.hash, { parsed, createdAt: obj.createdAt });
                 } catch { /* skip malformed */ }
             }
@@ -405,8 +414,8 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
     const commitObj = await GitObject.findOne({ repositoryId: repoDoc._id, hash: branch.commitHash, type: 'commit' });
     if (!commitObj) throw new ApiError(404, 'Commit not found');
 
-    const commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
-    const rootTreeHash = commitData.tree;
+    const commitData = parseGitObjectData(commitObj);
+    const rootTreeHash = commitData?.tree;
 
     // pathSegments already extracted above
     
@@ -414,8 +423,8 @@ const deleteRepoFile = asyncHandler(async (req, res) => {
         const treeObj = await GitObject.findOne({ repositoryId, hash: treeHash, type: 'tree' });
         if (!treeObj) throw new ApiError(404, 'Tree object not found');
         
-        let parsed = typeof treeObj.data === 'string' ? JSON.parse(treeObj.data) : treeObj.data;
-        let entries = parsed.entries || [];
+        let parsed = parseGitObjectData(treeObj);
+        let entries = parsed?.entries || [];
         
         const segment = segments[0];
         const isTarget = segments.length === 1;
@@ -521,7 +530,10 @@ const downloadRepoZip = asyncHandler(async (req, res) => {
 
     let commitData;
     try {
-        commitData = typeof commitObj.data === 'string' ? JSON.parse(commitObj.data) : commitObj.data;
+        commitData = parseGitObjectData(commitObj);
+        if (!commitData || typeof commitData !== 'object') {
+            throw new Error('Not an object');
+        }
     } catch {
         throw new ApiError(500, 'Invalid commit format');
     }
@@ -553,10 +565,20 @@ const downloadRepoZip = asyncHandler(async (req, res) => {
             type: 'blob'
         }).lean();
 
-        const blobMap = new Map(blobs.map(b => [b.hash, b.data]));
+        const blobMap = new Map(blobs.map(b => [b.hash, b]));
         for (const [filePath, bHash] of batch) {
-            const data = blobMap.get(bHash) ?? '';
-            archive.append(data, { name: filePath });
+            const blobRecord = blobMap.get(bHash);
+            let fileBuffer;
+            if (blobRecord) {
+                if (blobRecord.encoding === 'base64') {
+                    fileBuffer = Buffer.from(blobRecord.data || '', 'base64');
+                } else {
+                    fileBuffer = Buffer.from(blobRecord.data || '', 'utf8');
+                }
+            } else {
+                fileBuffer = Buffer.from('', 'utf8');
+            }
+            archive.append(fileBuffer, { name: filePath });
         }
     }
 

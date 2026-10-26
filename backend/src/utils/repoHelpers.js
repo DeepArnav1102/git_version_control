@@ -51,6 +51,32 @@ const resolveRepo = async (ownerParam, repoName, currentUser = null) => {
     return repo;
 };
 
+// Helper to parse GitObject data (handles JSON, string, and base64-encoded JSON)
+const parseGitObjectData = (obj) => {
+    if (!obj || obj.data === undefined || obj.data === null) return null;
+    let raw = obj.data;
+    if (typeof raw !== 'string') return raw;
+
+    // Check if encoded as base64
+    if (obj.encoding === 'base64') {
+        try {
+            raw = Buffer.from(raw, 'base64').toString('utf8');
+        } catch {}
+    }
+
+    try {
+        return JSON.parse(raw);
+    } catch {
+        // Fallback: if not explicitly marked base64, attempt base64 decode if it looks like base64
+        try {
+            const decoded = Buffer.from(raw, 'base64').toString('utf8');
+            return JSON.parse(decoded);
+        } catch {
+            return raw;
+        }
+    }
+};
+
 // Helper: recursively build full directory tree hierarchy for navigation tree
 const buildRecursiveTree = async (treeHash, repositoryId, currentSubPath = '') => {
     const obj = await GitObject.findOne({
@@ -61,7 +87,7 @@ const buildRecursiveTree = async (treeHash, repositoryId, currentSubPath = '') =
     if (!obj) return [];
     let parsed;
     try {
-        parsed = typeof obj.data === 'string' ? JSON.parse(obj.data) : obj.data;
+        parsed = parseGitObjectData(obj);
     } catch {
         return [];
     }
@@ -151,5 +177,6 @@ module.exports = {
     resolveRepo,
     buildRecursiveTree,
     updateBranchCommit,
+    parseGitObjectData,
 };
 

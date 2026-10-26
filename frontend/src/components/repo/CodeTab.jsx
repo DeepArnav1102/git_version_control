@@ -336,18 +336,18 @@ export default function CodeTab({
                                 let blob;
                                 const ext = activeFile.name.split('.').pop().toLowerCase();
                                 const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
+                                const isBase64 = activeFile.encoding === 'base64' || /^[a-zA-Z0-9+/]+={0,2}$/.test(activeFile.content?.trim());
                                 if (isImage) {
-                                  const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
                                   if (ext === 'svg') {
                                     blob = new Blob([activeFile.content], { type: 'image/svg+xml' });
-                                  } else if (isLikelyBase64) {
-                                    const byteCharacters = atob(activeFile.content);
+                                  } else if (isBase64) {
+                                    const byteCharacters = atob(activeFile.content.trim());
                                     const byteNumbers = new Array(byteCharacters.length);
                                     for (let i = 0; i < byteCharacters.length; i++) {
                                       byteNumbers[i] = byteCharacters.charCodeAt(i);
                                     }
                                     const byteArray = new Uint8Array(byteNumbers);
-                                    blob = new Blob([byteArray], { type: `image/${ext}` });
+                                    blob = new Blob([byteArray], { type: `image/${ext === 'ico' ? 'x-icon' : ext}` });
                                   } else {
                                     try {
                                       const base64 = btoa(unescape(encodeURIComponent(activeFile.content)));
@@ -357,10 +357,22 @@ export default function CodeTab({
                                         byteNumbers[i] = byteCharacters.charCodeAt(i);
                                       }
                                       const byteArray = new Uint8Array(byteNumbers);
-                                      blob = new Blob([byteArray], { type: `image/${ext}` });
+                                      blob = new Blob([byteArray], { type: `image/${ext === 'ico' ? 'x-icon' : ext}` });
                                     } catch (e) {
                                       blob = new Blob([activeFile.content]);
                                     }
+                                  }
+                                } else if (isBase64 && activeFile.encoding === 'base64') {
+                                  try {
+                                    const byteCharacters = atob(activeFile.content.trim());
+                                    const byteNumbers = new Array(byteCharacters.length);
+                                    for (let i = 0; i < byteCharacters.length; i++) {
+                                      byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                    }
+                                    const byteArray = new Uint8Array(byteNumbers);
+                                    blob = new Blob([byteArray], { type: 'application/octet-stream' });
+                                  } catch (e) {
+                                    blob = new Blob([activeFile.content]);
                                   }
                                 } else {
                                   blob = new Blob([activeFile.content]);
@@ -422,20 +434,17 @@ export default function CodeTab({
                   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico'].includes(ext);
 
                   if (isImage) {
-                    // Try to guess if content is already base64, otherwise try to convert or use raw
-                    const isLikelyBase64 = /^[a-zA-Z0-9+/]*={0,2}$/.test(activeFile.content.trim().substring(0, 100));
+                    const isBase64 = activeFile.encoding === 'base64' || /^[a-zA-Z0-9+/]+={0,2}$/.test(activeFile.content?.trim());
                     let imgSrc = '';
                     if (ext === 'svg') {
                       imgSrc = `data:image/svg+xml;utf8,${encodeURIComponent(activeFile.content)}`;
-                    } else if (isLikelyBase64) {
-                      imgSrc = `data:image/${ext};base64,${activeFile.content}`;
+                    } else if (isBase64) {
+                      imgSrc = `data:image/${ext === 'ico' ? 'x-icon' : ext};base64,${activeFile.content.trim()}`;
                     } else {
-                      // if it was saved as raw binary string, btoa might fail on invalid characters.
                       try {
-                        imgSrc = `data:image/${ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
+                        imgSrc = `data:image/${ext === 'ico' ? 'x-icon' : ext};base64,${btoa(unescape(encodeURIComponent(activeFile.content)))}`;
                       } catch (e) {
-                        // fallback to raw in case it magically works or just let it break with a broken image icon
-                        imgSrc = `data:image/${ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
+                        imgSrc = `data:image/${ext === 'ico' ? 'x-icon' : ext};base64,${btoa(activeFile.content.replace(/[^\x00-\xFF]/g, ''))}`;
                       }
                     }
 
@@ -450,6 +459,21 @@ export default function CodeTab({
                             e.target.parentElement.innerHTML = '<div class="text-sm text-gray-500 bg-white p-4 rounded border border-red-200 text-center">Unable to load image.<br/><span class="text-xs text-gray-400 mt-2 block">The file might be corrupted or not pushed with correct binary encoding.</span></div>';
                           }}
                         />
+                      </div>
+                    );
+                  }
+
+                  // Non-image binary file preview (e.g. PDF, zip, exe, tar, audio/video)
+                  if (activeFile.encoding === 'base64') {
+                    return (
+                      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-gray-50 text-gray-600 gap-3">
+                        <div className="p-4 bg-white rounded-full shadow-sm border border-gray-200">
+                          {getFileIcon(activeFile.name)}
+                        </div>
+                        <div className="text-sm font-medium text-gray-800">{activeFile.name}</div>
+                        <div className="text-xs text-gray-400">
+                          Binary file ({activeFile.size || 0} bytes) — preview not available
+                        </div>
                       </div>
                     );
                   }
