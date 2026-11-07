@@ -3,6 +3,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
+const { decodeGitBlobBytes, looksLikeText } = require('../utils/blobEncoding');
 const User = require('../models/User.model');
 const mongoose = require('mongoose');
 const { resolveUser, resolveRepo, parseGitObjectData } = require('../utils/repoHelpers');
@@ -296,18 +297,38 @@ const getRepoBlob = asyncHandler(async (req, res) => {
 
     if (!blobObj) throw new ApiError(404, 'File content not found');
 
-    const isBase64 = blobObj.encoding === 'base64';
-    const computedSize = isBase64
-        ? Buffer.from(blobObj.data || '', 'base64').length
-        : Buffer.byteLength(blobObj.data || '', 'utf8');
+    // AUDIT finding 1 follow-up: the Rusty CLI pushes every object (text or
+    // binary) as base64 with encoding: 'base64'. Unwrap that transport layer
+    // here so text files are served as UTF-8 and rendered normally; true
+    // binary stays base64 so the UI offers a "binary" preview and download.
+    // (The CLI wire endpoints are untouched — the CLI must still receive
+    // encoded payloads to verify against their hash.)
+    const blobBytes = decodeGitBlobBytes(blobObj);
+    const textContent = looksLikeText(blobBytes) ? blobBytes.toString('utf8') : null;
+
+    let content;
+    let encoding;
+
+    if (textContent !== null) {
+        content = textContent;
+        encoding = 'utf8';
+    } else if (blobObj.encoding === 'base64') {
+        content = blobObj.data;
+        encoding = 'base64';
+    } else {
+        // Binary content stored without the base64 marker (pre-encoding-era
+        // legacy data). Re-wrap so the UI consistently shows a binary preview.
+        content = Buffer.from(blobObj.data || '', 'utf8').toString('base64');
+        encoding = 'base64';
+    }
 
     res.status(200).json({
         success: true,
         data: {
             hash: blobObj.hash,
-            content: blobObj.data,
-            encoding: blobObj.encoding || (isBase64 ? 'base64' : 'utf8'),
-            size: computedSize,
+            content,
+            encoding,
+            size: blobBytes.length,
         },
     });
 });
@@ -684,25 +705,43 @@ const compareBranches = asyncHandler(async (req, res) => {
         let additions = 0;
         let deletions = 0;
         let diffText = '';
-        const isBinary = isBinaryExt(path);
+        let isBinary = isBinaryExt(path);
 
-        if (!isBinary && status !== 'deleted') {
-            const getBlob = async (h) => {
-                if (!h) return '';
-                const obj = await GitObject.findOne({ repositoryId: { $in: repoIds }, hash: h, type: 'blob' });
-                return obj ? obj.data : '';
-            };
-            const oldStr = await getBlob(bHash);
-            const newStr = await getBlob(hHash);
-            
-            const diffResult = generateUnifiedDiff(oldStr, newStr);
-            diffText = diffResult.diffText;
-            additions = diffResult.additions;
-            deletions = diffResult.deletions;
-        } else if (!isBinary && status === 'deleted') {
-            const obj = await GitObject.findOne({ repositoryId: { $in: repoIds }, hash: bHash, type: 'blob' });
-            const oldStr = obj ? obj.data : '';
-            deletions = oldStr.split('\n').length;
+        // AUDIT encoding follow-up: blobs may be stored base64-wrapped by
+        // the Rusty CLI. Decode to real bytes, then decide text-vs-binary
+        // by CONTENT (NUL sniffing), not just by extension: a ".txt" holding
+        // real binary bytes is diffed as binary, and a text file wrapped in
+        // base64 is diffed as text.
+        const readBlobContent = async (h) => {
+            if (!h) return { text: '', binary: false };
+            const obj = await GitObject.findOne({ repositoryId: { $in: repoIds }, hash: h, type: 'blob' });
+            if (!obj) return { text: '', binary: false };
+            const bytes = decodeGitBlobBytes(obj);
+            return looksLikeText(bytes)
+                ? { text: bytes.toString('utf8'), binary: false }
+                : { text: '', binary: true };
+        };
+
+        if (status !== 'deleted') {
+            const oldSide = await readBlobContent(bHash);
+            const newSide = await readBlobContent(hHash);
+
+            isBinary = isBinary || oldSide.binary || newSide.binary;
+
+            if (!isBinary) {
+                const diffResult = generateUnifiedDiff(oldSide.text, newSide.text);
+                diffText = diffResult.diffText;
+                additions = diffResult.additions;
+                deletions = diffResult.deletions;
+            }
+        } else {
+            const oldSide = await readBlobContent(bHash);
+
+            isBinary = isBinary || oldSide.binary;
+
+            if (!isBinary) {
+                deletions = oldSide.text.split('\n').length;
+            }
         }
 
         totalAdditions += additions;

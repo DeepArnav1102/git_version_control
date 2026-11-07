@@ -4,6 +4,11 @@ const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
 const { resolveRepo, updateBranchCommit, parseGitObjectData } = require('../utils/repoHelpers');
 const { canUserPushToRepo } = require('../utils/permissionHelpers');
+const {
+    assertSafeBranchName,
+    parseObjectPayload,
+    findUnsafeTreeEntryName,
+} = require('../utils/pathSafety');
 
 
 // ============================================================
@@ -98,6 +103,23 @@ const storeObject = asyncHandler(async (req, res) => {
     const dataString = typeof data === 'string' ? data : JSON.stringify(data);
     if (dataString.length > 50 * 1024 * 1024) { // 50MB limit
         throw new ApiError(400, 'Data payload exceeds 50MB limit');
+    }
+
+    // Ingest gate (AUDIT finding 2): tree entry names come from client
+    // input and are served back to every fetcher as download metadata.
+    // A tree entry named "../pwned.txt" would be written real-time as a
+    // path by clients on checkout/merge, and become a ZIP archive path
+    // on download. Reject hostile trees here rather than storing them.
+    if (objectType === 'tree') {
+        const parsedTree = parseObjectPayload(dataString, encoding);
+        const unsafeName = findUnsafeTreeEntryName(parsedTree);
+
+        if (unsafeName !== null) {
+            throw new ApiError(
+                400,
+                `Tree object rejected: entry name "${String(unsafeName).slice(0, 80)}" is not a safe path`
+            );
+        }
     }
 
     const updateFields = {
@@ -247,7 +269,25 @@ const storeObjectsBatch = asyncHandler(async (req, res) => {
             continue;
         }
 
+        // Ingest gate (AUDIT finding 2): same as storeObject — refuse to
+        // persist any tree whose entry names could become traversal paths
+        // downstream (client refs, ZIP archives, merge trees, codespaces).
         const dataString = typeof data === 'string' ? data : JSON.stringify(data);
+
+        if (objectType === 'tree') {
+            const parsedTree = parseObjectPayload(dataString, encoding);
+            const unsafeName = findUnsafeTreeEntryName(parsedTree);
+
+            if (unsafeName !== null) {
+                // Fail the whole batch loudly rather than silently skipping:
+                // a skipped object would leave the pushing client believing
+                // the push succeeded while its history stays incomplete.
+                throw new ApiError(
+                    400,
+                    `Tree object rejected: entry name "${String(unsafeName).slice(0, 80)}" is not a safe path`
+                );
+            }
+        }
 
         const setDoc = {
             repositoryId: repoDoc._id,
@@ -363,13 +403,19 @@ const updateRef = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'Invalid commit hash format');
     }
 
-    if (typeof branch !== 'string' || branch.length > 255 || !/^[a-zA-Z0-9_\-\.\/]+$/.test(branch)) {
+    if (typeof branch !== 'string' || branch.length > 255) {
         throw new ApiError(400, 'Invalid branch name');
     }
 
+    // Strip the ref prefix the client may send, then validate per segment.
+    // The previous flat regex `[a-zA-Z0-9_\-\.\/]+` admitted names like
+    // "../evil" or "a/../b"; those become refs/remotes/... paths on Rusty
+    // CLI clients (path traversal on fetch/checkout) — AUDIT finding 2.
     const cleanBranch = branch
         .replace(/^refs\/heads\//, '')
         .trim();
+
+    assertSafeBranchName(cleanBranch, 'Branch name');
 
     const repoDoc = await resolveRepo(
         owner && repo ? owner : null,

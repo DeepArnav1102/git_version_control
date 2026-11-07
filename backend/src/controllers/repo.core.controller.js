@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const Repository = require('../models/Repository.model');
 const GitObject = require('../models/GitObject.model');
+const { assertSafeBranchName } = require('../utils/pathSafety');
 const User = require('../models/User.model');
 const Notification = require('../models/Notification.model');
 const mongoose = require('mongoose');
@@ -107,6 +108,7 @@ const updateRepo = asyncHandler(async (req, res) => {
         if (!branchExists && repoDoc.branches.length > 0) {
             throw new ApiError(400, `Branch '${defaultBranch}' does not exist`);
         }
+        assertSafeBranchName(defaultBranch, 'Default branch name');
         repoDoc.defaultBranch = defaultBranch;
     }
 

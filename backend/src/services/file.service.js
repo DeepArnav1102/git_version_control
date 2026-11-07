@@ -159,11 +159,19 @@ class FileService {
 
     /**
      * Updates an existing file's content.
+     * Accepts a UTF-8 string (text files) or a Buffer (binary blobs,
+     * written byte-exact so images/archives survive a CLI push round-trip).
      */
     static async updateFile(userId, filePath, content) {
         const securePath = this.getSecurePath(userId, filePath);
         await fs.mkdir(path.dirname(securePath), { recursive: true });
-        await fs.writeFile(securePath, content, 'utf8');
+
+        if (Buffer.isBuffer(content)) {
+            await fs.writeFile(securePath, content);
+        } else {
+            await fs.writeFile(securePath, content, 'utf8');
+        }
+
         return { success: true };
     }
 
